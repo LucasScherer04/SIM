@@ -2,6 +2,9 @@ let STATE = {
   portfolio: null,
   currentTab: "DASHBOARD",
   previousTab: "DASHBOARD",
+  portfolioSubTab: "CHART", // 'CHART' ou 'CATEGORIES'
+  donutMode: "CATEGORY", // 'CATEGORY' ou 'ASSET'
+  categoryListFilter: "ALL",
   marketClass: "ACAO_BR",
   marketSort: "em_alta",
   onlyMine: false,
@@ -12,21 +15,45 @@ let STATE = {
 };
 
 const CLASS_COLORS = {
-  ACAO_BR: "#10b981",
   FII: "#3b82f6",
-  RENDA_FIXA: "#8b5cf6",
+  ACAO_BR: "#10b981",
+  CAIXINHA: "#a855f7",
+  RENDA_FIXA: "#6366f1",
+  TESOURO: "#14b8a6",
+  FUNDO_INV: "#eab308",
+  ETF_BR: "#06b6d4",
   STOCK_US: "#f59e0b",
   CRIPTO: "#ec4899",
-  ETF_BR: "#06b6d4",
 };
 
+const ASSET_PALETTE = [
+  "#10b981", "#3b82f6", "#a855f7", "#f59e0b", "#ec4899",
+  "#06b6d4", "#6366f1", "#14b8a6", "#eab308", "#f43f5e",
+  "#84cc16", "#fb923c", "#38bdf8", "#c084fc"
+];
+
 const CLASS_NAMES = {
-  ACAO_BR: "Ações Brasileiras (B3)",
   FII: "Fundos Imobiliários (FIIs)",
-  RENDA_FIXA: "Renda Fixa & Tesouro",
+  ACAO_BR: "Ações Brasileiras (B3)",
+  CAIXINHA: "Caixinhas & Liquidez Diária (Nubank / Bancos)",
+  RENDA_FIXA: "CDB, LCI, LCA & Renda Fixa (CDI / IPCA+)",
+  TESOURO: "Tesouro Direto (Tesouro IPCA+ / Selic)",
+  FUNDO_INV: "Fundos de Investimento",
+  ETF_BR: "ETFs & Índices (B3)",
   STOCK_US: "Stocks EUA (NYSE / NASDAQ)",
   CRIPTO: "Criptomoedas (Tempo Real)",
-  ETF_BR: "ETFs & Índices (B3)",
+};
+
+const CLASS_ICONS = {
+  FII: "🏢",
+  ACAO_BR: "🇧🇷",
+  CAIXINHA: "💜",
+  RENDA_FIXA: "🏦",
+  TESOURO: "🏛️",
+  FUNDO_INV: "📈",
+  ETF_BR: "🌎",
+  STOCK_US: "🇺🇸",
+  CRIPTO: "₿",
 };
 
 function fmtMoney(val, currency = "BRL") {
@@ -117,6 +144,68 @@ function renderMacroTicker(m) {
   }
 }
 
+function switchPortfolioSubTab(subTab) {
+  STATE.portfolioSubTab = subTab;
+  const bChart = document.getElementById("subtab-CHART");
+  const bCat = document.getElementById("subtab-CATEGORIES");
+  const vChart = document.getElementById("portfolio-subview-CHART");
+  const vCat = document.getElementById("portfolio-subview-CATEGORIES");
+
+  if (subTab === "CHART") {
+    bChart.classList.add("pill-active");
+    bChart.classList.remove("text-slate-300");
+    bCat.classList.remove("pill-active");
+    bCat.classList.add("text-slate-300");
+    vChart.classList.remove("hidden");
+    vCat.classList.add("hidden");
+    if (STATE.portfolio) renderPortfolioDonutAndBars(STATE.portfolio);
+  } else {
+    bCat.classList.add("pill-active");
+    bCat.classList.remove("text-slate-300");
+    bChart.classList.remove("pill-active");
+    bChart.classList.add("text-slate-300");
+    vCat.classList.remove("hidden");
+    vChart.classList.add("hidden");
+    if (STATE.portfolio) renderCategorizedInvestments(STATE.portfolio);
+  }
+}
+
+function setDonutMode(mode) {
+  STATE.donutMode = mode;
+  const bCat = document.getElementById("donut-mode-CATEGORY");
+  const bAsset = document.getElementById("donut-mode-ASSET");
+  if (mode === "CATEGORY") {
+    bCat.classList.add("pill-active");
+    bCat.classList.remove("text-slate-300");
+    bAsset.classList.remove("pill-active");
+    bAsset.classList.add("text-slate-300");
+  } else {
+    bAsset.classList.add("pill-active");
+    bAsset.classList.remove("text-slate-300");
+    bCat.classList.remove("pill-active");
+    bCat.classList.add("text-slate-300");
+  }
+  if (STATE.portfolio) {
+    renderPortfolioDonutAndBars(STATE.portfolio);
+  }
+}
+
+function setCategoryListFilter(catKey) {
+  STATE.categoryListFilter = catKey;
+  document.querySelectorAll(".cat-filter-btn").forEach(b => {
+    b.classList.remove("pill-active");
+    b.classList.add("bg-slate-800", "text-slate-300");
+  });
+  const active = document.getElementById(`catfilter-${catKey}`);
+  if (active) {
+    active.classList.add("pill-active");
+    active.classList.remove("bg-slate-800", "text-slate-300");
+  }
+  if (STATE.portfolio) {
+    renderCategorizedInvestments(STATE.portfolio);
+  }
+}
+
 function renderDashboard(data) {
   const k = data.kpis;
   const kpiContainer = document.getElementById("kpi-cards-container");
@@ -147,71 +236,163 @@ function renderDashboard(data) {
     <div class="glass-card rounded-2xl p-4 border-l-4 border-l-blue-500">
       <div class="text-[11px] uppercase font-bold text-slate-400">Renda Passiva (Dividendos)</div>
       <div class="text-xl sm:text-2xl font-black text-blue-400 mt-1">${fmtMoney(k.total_dividends_brl)}</div>
-      <div class="text-xs text-slate-300 mt-1">FIIs Est.: <strong class="text-emerald-400">${fmtMoney(k.estimated_monthly_divs_brl)}/mês</strong></div>
+      <div class="text-xs text-slate-300 mt-1">Est. Mensal: <strong class="text-emerald-400">${fmtMoney(k.estimated_monthly_divs_brl)}/mês</strong></div>
     </div>
   `;
 
-  document.getElementById("usd-equivalent-badge").textContent = `Câmbio: R$ ${Number(data.macro.usd_brl).toFixed(2)}`;
+  const totalHoldings = (data.positions ? data.positions.length : 0) + (data.fixed_income ? data.fixed_income.length : 0);
+  const countBadge = document.getElementById("portfolio-count-badge");
+  if (countBadge) countBadge.textContent = totalHoldings;
 
-  // Allocation Bars + Donut Chart
-  renderAllocationDonut(data.allocation);
+  const emptyState = document.getElementById("portfolio-empty-state");
+  const clearBtn = document.getElementById("btn-clear-portfolio");
+  if (totalHoldings === 0) {
+    emptyState.classList.remove("hidden");
+    if (clearBtn) clearBtn.classList.add("hidden");
+  } else {
+    emptyState.classList.add("hidden");
+    if (clearBtn) clearBtn.classList.remove("hidden");
+  }
+
+  document.getElementById("usd-equivalent-badge").textContent = `Câmbio Dólar: R$ ${Number(data.macro.usd_brl).toFixed(2)}`;
+
+  renderPortfolioDonutAndBars(data);
+  renderCategorizedInvestments(data);
+}
+
+function renderPortfolioDonutAndBars(data) {
   const barsContainer = document.getElementById("allocation-bars-list");
-  barsContainer.innerHTML = data.allocation.map(item => {
-    const color = CLASS_COLORS[item.asset_class] || "#10b981";
+  if (!barsContainer) return;
+
+  let slices = [];
+  if (STATE.donutMode === "ASSET") {
+    const assets = data.allocation_by_asset || [];
+    slices = assets.map((a, idx) => ({
+      key: a.code,
+      label: `${a.code}`,
+      sublabel: a.name !== a.code ? a.name : a.category_label,
+      current_brl: a.current_brl,
+      invested_brl: a.invested_brl,
+      profit_brl: a.profit_brl,
+      profit_pct: a.profit_pct,
+      pct: a.weight_pct,
+      color: ASSET_PALETTE[idx % ASSET_PALETTE.length],
+      asset_class: a.asset_class,
+      is_fixed_income: a.is_fixed_income,
+    }));
+  } else {
+    const alloc = (data.allocation || []).filter(it => it.current_brl > 0 || it.target_pct > 0);
+    slices = alloc.map(it => ({
+      key: it.asset_class,
+      label: `${CLASS_ICONS[it.asset_class] || "📊"} ${it.label}`,
+      sublabel: `${it.count || 0} ativo(s) na carteira · Meta: ${it.target_pct}%`,
+      current_brl: it.current_brl,
+      invested_brl: it.invested_brl || 0,
+      profit_brl: it.profit_brl || 0,
+      profit_pct: it.profit_pct || 0,
+      pct: it.current_pct,
+      color: CLASS_COLORS[it.asset_class] || "#10b981",
+      asset_class: it.asset_class,
+    }));
+  }
+
+  renderInteractiveDonutCanvas(slices, data.kpis.total_current_brl);
+
+  const activeSlices = slices.filter(s => s.current_brl > 0);
+  if (activeSlices.length === 0) {
+    barsContainer.innerHTML = `
+      <div class="p-6 rounded-xl bg-slate-900/70 border border-slate-800 text-center space-y-2">
+        <div class="text-sm font-bold text-slate-200">Nenhum investimento na carteira ainda</div>
+        <p class="text-xs text-slate-400">Clique em <strong>"+ Adicionar à Carteira"</strong> no topo para cadastrar suas Ações, FIIs, Caixinha Nubank, CDB ou Tesouro IPCA+.</p>
+      </div>
+    `;
+    return;
+  }
+
+  barsContainer.innerHTML = activeSlices.map((item, idx) => {
+    const profCls = item.profit_brl >= 0 ? "text-emerald-400" : "text-rose-400";
+    const clickAction = STATE.donutMode === "ASSET" && !item.is_fixed_income
+      ? `openAssetDetail('${item.key}')`
+      : `openCategoryFromDonut('${item.asset_class}')`;
     return `
-      <div class="space-y-1 cursor-pointer hover:bg-slate-800/40 p-1.5 rounded-lg transition" onclick="switchMainTab('${item.asset_class}')">
+      <div class="space-y-1.5 cursor-pointer bg-slate-900/65 hover:bg-slate-800/80 border border-slate-800/80 p-3 rounded-xl transition"
+           onmouseenter="highlightDonutSlice(${idx})"
+           onmouseleave="highlightDonutSlice(null)"
+           onclick="${clickAction}">
         <div class="flex items-center justify-between text-xs">
-          <span class="font-semibold text-slate-200 flex items-center gap-2">
-            <span class="w-2.5 h-2.5 rounded-full inline-block" style="background:${color}"></span>
-            ${item.label}
-          </span>
-          <span class="text-slate-300 font-mono">
-            <strong>${item.current_pct.toFixed(1)}%</strong> <span class="text-slate-500">(Meta: ${item.target_pct}%)</span> · ${fmtMoney(item.current_brl)}
-          </span>
+          <div class="flex items-center gap-2 min-w-0">
+            <span class="w-3 h-3 rounded-full shrink-0" style="background:${item.color}"></span>
+            <div class="truncate">
+              <span class="font-bold text-white">${item.label}</span>
+              <span class="text-[11px] text-slate-400 block truncate">${item.sublabel}</span>
+            </div>
+          </div>
+          <div class="text-right shrink-0 ml-2">
+            <div class="font-mono font-bold text-white">${fmtMoney(item.current_brl)} <span class="text-emerald-400">(${item.pct.toFixed(1)}%)</span></div>
+            <div class="text-[11px] font-mono ${profCls}">Lucro: ${fmtMoney(item.profit_brl)} (${fmtPct(item.profit_pct)})</div>
+          </div>
         </div>
         <div class="w-full h-2 bg-slate-800 rounded-full overflow-hidden">
-          <div class="h-full rounded-full" style="width:${Math.min(100, item.current_pct)}%; background:${color}"></div>
+          <div class="h-full rounded-full transition-all duration-300" style="width:${Math.min(100, Math.max(2, item.pct))}%; background:${item.color}"></div>
         </div>
       </div>
     `;
   }).join("");
-
-  // Positions Table
-  const tbody = document.getElementById("portfolio-positions-tbody");
-  tbody.innerHTML = data.positions.map(p => {
-    const chgCls = p.change_pct >= 0 ? "text-emerald-400" : "text-rose-400";
-    const profCls = p.profit_brl >= 0 ? "text-emerald-400" : "text-rose-400";
-    const divTxt = p.last_dividend_per_share > 0 ? `${fmtMoney(p.last_dividend_per_share, p.currency)}/cota` : "—";
-    return `
-      <tr class="hover:bg-slate-800/50 cursor-pointer transition" onclick="openAssetDetail('${p.ticker}')">
-        <td class="py-3 px-3">
-          <div class="font-bold text-white">${p.ticker}</div>
-          <div class="text-[11px] text-slate-400 truncate max-w-[160px]">${p.name}</div>
-        </td>
-        <td class="py-3 px-3">
-          <span class="px-2 py-0.5 rounded text-[11px] font-bold bg-slate-800 text-slate-300">${p.asset_class}</span>
-        </td>
-        <td class="py-3 px-3 text-right font-mono text-slate-200">${p.quantity}</td>
-        <td class="py-3 px-3 text-right font-mono text-slate-300">${fmtMoney(p.avg_price, p.currency)}</td>
-        <td class="py-3 px-3 text-right font-mono font-bold text-white">${fmtMoney(p.current_price, p.currency)}</td>
-        <td class="py-3 px-3 text-right font-mono font-bold ${chgCls}">${fmtPct(p.change_pct)}</td>
-        <td class="py-3 px-3 text-right font-mono text-emerald-400 font-semibold">${divTxt}</td>
-        <td class="py-3 px-3 text-right font-mono font-bold text-white">${fmtMoney(p.current_brl)}</td>
-        <td class="py-3 px-3 text-right font-mono ${profCls}">
-          <div class="font-bold">${fmtMoney(p.profit_brl)}</div>
-          <div class="text-[11px]">${fmtPct(p.profit_pct)}</div>
-        </td>
-        <td class="py-3 px-3 text-center">
-          <button class="px-2.5 py-1 rounded-lg bg-emerald-500/15 hover:bg-emerald-500/30 text-emerald-400 text-xs font-bold border border-emerald-500/30">
-            Ver Gráfico & IA →
-          </button>
-        </td>
-      </tr>
-    `;
-  }).join("");
 }
 
-function renderAllocationDonut(allocation) {
+function openCategoryFromDonut(assetClass) {
+  switchPortfolioSubTab("CATEGORIES");
+  const filterKey = ["ETF_BR", "FUNDO_INV", "STOCK_US", "CRIPTO"].includes(assetClass) ? "OUTROS" : assetClass;
+  setCategoryListFilter(filterKey);
+}
+
+let _currentDonutSlices = [];
+let _currentDonutTotal = 0;
+
+function highlightDonutSlice(hoverIdx) {
+  drawDonutWithHover(_currentDonutSlices, _currentDonutTotal, hoverIdx);
+}
+
+function renderInteractiveDonutCanvas(slices, totalBrl) {
+  _currentDonutSlices = slices.filter(s => s.current_brl > 0);
+  _currentDonutTotal = totalBrl;
+  drawDonutWithHover(_currentDonutSlices, _currentDonutTotal, null);
+
+  const canvas = document.getElementById("allocation-canvas");
+  if (!canvas) return;
+
+  canvas.onmousemove = (e) => {
+    if (_currentDonutSlices.length === 0) return;
+    const rect = canvas.getBoundingClientRect();
+    const x = e.clientX - rect.left - canvas.width / 2;
+    const y = e.clientY - rect.top - canvas.height / 2;
+    const dist = Math.sqrt(x * x + y * y);
+    if (dist < 58 || dist > 122) {
+      drawDonutWithHover(_currentDonutSlices, _currentDonutTotal, null);
+      return;
+    }
+    let angle = Math.atan2(y, x) + Math.PI / 2;
+    if (angle < 0) angle += Math.PI * 2;
+    const total = _currentDonutSlices.reduce((acc, s) => acc + s.current_brl, 0);
+    let accum = 0;
+    let foundIdx = null;
+    for (let i = 0; i < _currentDonutSlices.length; i++) {
+      const sliceAngle = (_currentDonutSlices[i].current_brl / total) * (Math.PI * 2);
+      if (angle >= accum && angle <= accum + sliceAngle) {
+        foundIdx = i;
+        break;
+      }
+      accum += sliceAngle;
+    }
+    drawDonutWithHover(_currentDonutSlices, _currentDonutTotal, foundIdx);
+  };
+
+  canvas.onmouseleave = () => {
+    drawDonutWithHover(_currentDonutSlices, _currentDonutTotal, null);
+  };
+}
+
+function drawDonutWithHover(activeSlices, totalBrl, hoverIdx = null) {
   const canvas = document.getElementById("allocation-canvas");
   if (!canvas) return;
   const ctx = canvas.getContext("2d");
@@ -221,39 +402,323 @@ function renderAllocationDonut(allocation) {
 
   const cx = w / 2;
   const cy = h / 2;
-  const radius = 82;
-  const lineWidth = 24;
+  const radius = 94;
+  const baseLineWidth = 30;
 
-  let startAngle = -Math.PI / 2;
-  const total = allocation.reduce((acc, it) => acc + it.current_brl, 0);
+  const total = activeSlices.reduce((acc, it) => acc + it.current_brl, 0);
 
   if (total <= 0) {
     ctx.beginPath();
     ctx.arc(cx, cy, radius, 0, Math.PI * 2);
     ctx.strokeStyle = "#1e293b";
-    ctx.lineWidth = lineWidth;
+    ctx.lineWidth = baseLineWidth;
     ctx.stroke();
+
+    ctx.fillStyle = "#64748b";
+    ctx.font = "bold 12px Inter, sans-serif";
+    ctx.textAlign = "center";
+    ctx.fillText("CARTEIRA VAZIA", cx, cy - 4);
+    ctx.fillStyle = "#94a3b8";
+    ctx.font = "11px Inter, sans-serif";
+    ctx.fillText("R$ 0,00", cx, cy + 14);
     return;
   }
 
-  allocation.forEach(item => {
-    if (item.current_brl <= 0) return;
+  let startAngle = -Math.PI / 2;
+  activeSlices.forEach((item, idx) => {
     const sliceAngle = (item.current_brl / total) * (Math.PI * 2);
+    const isHovered = hoverIdx === idx;
+    const gap = activeSlices.length > 1 ? 0.025 : 0;
     ctx.beginPath();
-    ctx.arc(cx, cy, radius, startAngle, startAngle + sliceAngle - 0.03);
-    ctx.strokeStyle = CLASS_COLORS[item.asset_class] || "#10b981";
-    ctx.lineWidth = lineWidth;
+    ctx.arc(cx, cy, isHovered ? radius + 4 : radius, startAngle, startAngle + Math.max(0.01, sliceAngle - gap));
+    ctx.strokeStyle = item.color;
+    ctx.lineWidth = isHovered ? baseLineWidth + 6 : baseLineWidth;
     ctx.stroke();
     startAngle += sliceAngle;
   });
 
-  ctx.fillStyle = "#94a3b8";
-  ctx.font = "bold 11px Inter, sans-serif";
-  ctx.textAlign = "center";
-  ctx.fillText("CARTEIRA", cx, cy - 6);
-  ctx.fillStyle = "#f8fafc";
-  ctx.font = "bold 14px Inter, sans-serif";
-  ctx.fillText("100%", cx, cy + 14);
+  if (hoverIdx !== null && activeSlices[hoverIdx]) {
+    const s = activeSlices[hoverIdx];
+    const cleanTitle = s.label.replace(/^[^\wA-Za-zÀ-ÿ]+/, "").slice(0, 16);
+    ctx.fillStyle = "#cbd5e1";
+    ctx.font = "bold 11px Inter, sans-serif";
+    ctx.textAlign = "center";
+    ctx.fillText(cleanTitle, cx, cy - 16);
+
+    ctx.fillStyle = s.color;
+    ctx.font = "900 18px Inter, sans-serif";
+    ctx.fillText(`${s.pct.toFixed(1)}%`, cx, cy + 5);
+
+    ctx.fillStyle = "#f8fafc";
+    ctx.font = "bold 11px monospace";
+    ctx.fillText(fmtMoney(s.current_brl), cx, cy + 23);
+  } else {
+    ctx.fillStyle = "#94a3b8";
+    ctx.font = "bold 11px Inter, sans-serif";
+    ctx.textAlign = "center";
+    ctx.fillText("PATRIMÔNIO", cx, cy - 14);
+
+    ctx.fillStyle = "#10b981";
+    ctx.font = "900 15px Inter, sans-serif";
+    ctx.fillText(fmtMoney(totalBrl), cx, cy + 6);
+
+    ctx.fillStyle = "#cbd5e1";
+    ctx.font = "bold 11px Inter, sans-serif";
+    ctx.fillText(`${activeSlices.length} ${STATE.donutMode === "ASSET" ? "Ativo(s)" : "Categoria(s)"}`, cx, cy + 24);
+  }
+}
+
+function renderCategorizedInvestments(data) {
+  const container = document.getElementById("categorized-investments-container");
+  if (!container) return;
+
+  const positions = data.positions || [];
+  const fixedIncome = data.fixed_income || [];
+  const totalPortfolioBrl = data.kpis.total_current_brl || 0;
+
+  const categoryConfigs = [
+    {
+      key: "FII",
+      filterGroup: "FII",
+      icon: "🏢",
+      title: "Fundos Imobiliários (FIIs & Fiagros)",
+      subtitle: "Renda passiva mensal isenta de Imposto de Renda",
+      borderColor: "border-l-blue-500",
+      badgeCls: "bg-blue-500/15 text-blue-300 border-blue-500/30",
+      addAction: "openAddInvestmentModal('FII')",
+      addLabel: "+ Adicionar FII",
+      isVariable: true,
+      items: positions.filter(p => p.asset_class === "FII"),
+    },
+    {
+      key: "ACAO_BR",
+      filterGroup: "ACAO_BR",
+      icon: "🇧🇷",
+      title: "Ações Brasileiras (B3)",
+      subtitle: "Participação em empresas listadas na Bolsa do Brasil",
+      borderColor: "border-l-emerald-500",
+      badgeCls: "bg-emerald-500/15 text-emerald-300 border-emerald-500/30",
+      addAction: "openAddInvestmentModal('ACAO_BR')",
+      addLabel: "+ Adicionar Ação",
+      isVariable: true,
+      items: positions.filter(p => p.asset_class === "ACAO_BR"),
+    },
+    {
+      key: "CAIXINHA",
+      filterGroup: "CAIXINHA",
+      icon: "💜",
+      title: "Caixinhas & Liquidez Diária (Nubank / Bancos)",
+      subtitle: "Reserva de emergência e caixinhas rendendo % do CDI todos os dias úteis",
+      borderColor: "border-l-purple-500",
+      badgeCls: "bg-purple-500/15 text-purple-300 border-purple-500/30",
+      addAction: "openAddInvestmentModal('CAIXINHA')",
+      addLabel: "+ Adicionar Caixinha",
+      isVariable: false,
+      items: fixedIncome.filter(f => f.asset_class === "CAIXINHA"),
+    },
+    {
+      key: "RENDA_FIXA",
+      filterGroup: "RENDA_FIXA",
+      icon: "🏦",
+      title: "CDBs, LCIs, LCAs, Debêntures & Fundos DI (CDI / IPCA+ / Pré)",
+      subtitle: "Títulos bancários pós-fixados (% CDI), híbridos (IPCA+) e isentos de IR (LCI/LCA)",
+      borderColor: "border-l-indigo-500",
+      badgeCls: "bg-indigo-500/15 text-indigo-300 border-indigo-500/30",
+      addAction: "openAddInvestmentModal('RENDA_FIXA')",
+      addLabel: "+ Adicionar CDB / LCI / IPCA+",
+      isVariable: false,
+      items: fixedIncome.filter(f => f.asset_class === "RENDA_FIXA" || f.asset_class === "FUNDO_INV"),
+    },
+    {
+      key: "TESOURO",
+      filterGroup: "TESOURO",
+      icon: "🏛️",
+      title: "Tesouro Direto (Tesouro IPCA+, Tesouro Selic, Prefixado)",
+      subtitle: "Títulos públicos federais corrigidos pela inflação (IPCA+) ou Taxa Selic",
+      borderColor: "border-l-teal-500",
+      badgeCls: "bg-teal-500/15 text-teal-300 border-teal-500/30",
+      addAction: "openAddInvestmentModal('TESOURO')",
+      addLabel: "+ Adicionar Tesouro Direto",
+      isVariable: false,
+      items: fixedIncome.filter(f => f.asset_class === "TESOURO"),
+    },
+    {
+      key: "OUTROS",
+      filterGroup: "OUTROS",
+      icon: "🌎",
+      title: "ETFs, Fundos de Investimento, Stocks EUA & Criptomoedas",
+      subtitle: "Diversificação global, ETFs, fundos de cotas e criptoativos",
+      borderColor: "border-l-amber-500",
+      badgeCls: "bg-amber-500/15 text-amber-300 border-amber-500/30",
+      addAction: "openAddInvestmentModal('ETF_BR')",
+      addLabel: "+ Adicionar ETF / Fundo / Cripto",
+      isVariable: true,
+      items: positions.filter(p => ["ETF_BR", "FUNDO_INV", "STOCK_US", "CRIPTO"].includes(p.asset_class)),
+    },
+  ];
+
+  const filteredCategories = categoryConfigs.filter(cat => {
+    if (STATE.categoryListFilter !== "ALL") {
+      return cat.filterGroup === STATE.categoryListFilter;
+    }
+    return true;
+  });
+
+  container.innerHTML = filteredCategories.map(cat => {
+    const catInvested = cat.items.reduce((acc, it) => acc + (cat.isVariable ? it.invested_brl : it.invested_amount), 0);
+    const catCurrent = cat.items.reduce((acc, it) => acc + (cat.isVariable ? it.current_brl : it.net_amount), 0);
+    const catProfit = catCurrent - catInvested;
+    const catProfitPct = catInvested > 0 ? (catProfit / catInvested) * 100.0 : 0.0;
+    const catWeightPct = totalPortfolioBrl > 0 ? (catCurrent / totalPortfolioBrl) * 100.0 : 0.0;
+    const profCls = catProfit >= 0 ? "text-emerald-400" : "text-rose-400";
+
+    let bodyHtml = "";
+    if (cat.items.length === 0) {
+      bodyHtml = `
+        <div class="p-5 rounded-xl bg-slate-900/50 border border-slate-800/70 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs text-slate-400">
+          <span>Você ainda não cadastrou ativos na categoria <strong>${cat.title}</strong>.</span>
+          <button onclick="${cat.addAction}" class="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-emerald-400 font-bold border border-slate-700 shrink-0">
+            ${cat.addLabel}
+          </button>
+        </div>
+      `;
+    } else if (cat.isVariable) {
+      const rowsHtml = cat.items.map(p => {
+        const chgCls = p.change_pct >= 0 ? "text-emerald-400" : "text-rose-400";
+        const pProfCls = p.profit_brl >= 0 ? "text-emerald-400" : "text-rose-400";
+        const divTxt = p.last_dividend_per_share > 0 ? `${fmtMoney(p.last_dividend_per_share, p.currency)}/cota` : "—";
+        return `
+          <tr class="hover:bg-slate-800/50 transition">
+            <td class="py-3 px-3 cursor-pointer" onclick="openAssetDetail('${p.ticker}')">
+              <div class="font-bold text-white hover:text-emerald-400 transition">${p.ticker}</div>
+              <div class="text-[11px] text-slate-400 truncate max-w-[170px]">${p.name} · ${p.broker || "Corretora"}</div>
+            </td>
+            <td class="py-3 px-3 text-right font-mono font-bold text-slate-100">${p.quantity}</td>
+            <td class="py-3 px-3 text-right font-mono text-slate-300">${fmtMoney(p.avg_price, p.currency)}</td>
+            <td class="py-3 px-3 text-right font-mono font-bold text-white">
+              ${fmtMoney(p.current_price, p.currency)}
+              <span class="block text-[10px] ${chgCls}">${fmtPct(p.change_pct)} hoje</span>
+            </td>
+            <td class="py-3 px-3 text-right font-mono text-emerald-400 font-semibold">${divTxt}</td>
+            <td class="py-3 px-3 text-right font-mono text-slate-300">${fmtMoney(p.invested_brl)}</td>
+            <td class="py-3 px-3 text-right font-mono font-black text-white">
+              ${fmtMoney(p.current_brl)}
+              <span class="block text-[10px] text-slate-400 font-normal">${p.weight_pct.toFixed(1)}% da carteira</span>
+            </td>
+            <td class="py-3 px-3 text-right font-mono ${pProfCls}">
+              <div class="font-bold">${fmtMoney(p.profit_brl)}</div>
+              <div class="text-[11px]">${fmtPct(p.profit_pct)}</div>
+            </td>
+            <td class="py-3 px-3 text-center">
+              <div class="flex items-center justify-center gap-1.5">
+                <button onclick="openAssetDetail('${p.ticker}')" class="px-2.5 py-1 rounded-lg bg-emerald-500/15 hover:bg-emerald-500/30 text-emerald-400 text-xs font-bold border border-emerald-500/30" title="Ver Gráfico Interativo, Dividendos e Relatório IA">
+                  📈 Raio-X
+                </button>
+                <button onclick="openTransactionModal('${p.ticker}','${p.asset_class}',${p.current_price},'${p.currency}')" class="px-2 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-bold border border-slate-700" title="Registrar nova compra ou venda deste ativo">
+                  + / -
+                </button>
+                <button onclick="deleteVariablePosition('${p.ticker}')" class="px-2 py-1 rounded-lg bg-rose-500/10 hover:bg-rose-500/25 text-rose-400 text-xs border border-rose-500/20" title="Remover ativo da carteira">
+                  🗑️
+                </button>
+              </div>
+            </td>
+          </tr>
+        `;
+      }).join("");
+
+      bodyHtml = `
+        <div class="overflow-x-auto">
+          <table class="w-full text-left border-collapse text-xs sm:text-sm">
+            <thead>
+              <tr class="border-b border-slate-800 text-slate-400 text-[11px] uppercase">
+                <th class="py-2.5 px-3">Ativo / Corretora</th>
+                <th class="py-2.5 px-3 text-right">Qtd Cotas</th>
+                <th class="py-2.5 px-3 text-right">Preço Médio</th>
+                <th class="py-2.5 px-3 text-right">Cotação Atual</th>
+                <th class="py-2.5 px-3 text-right">Últ. Div/Cota</th>
+                <th class="py-2.5 px-3 text-right">Valor Investido</th>
+                <th class="py-2.5 px-3 text-right">Saldo Atual</th>
+                <th class="py-2.5 px-3 text-right">Lucro / Rentab.</th>
+                <th class="py-2.5 px-3 text-center">Ações</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-slate-800/60">${rowsHtml}</tbody>
+          </table>
+        </div>
+      `;
+    } else {
+      // Renda Fixa, Caixinhas Nubank, CDB, LCI, LCA, Tesouro IPCA+
+      const cardsHtml = cat.items.map(f => {
+        const fProfCls = f.net_profit >= 0 ? "text-emerald-400" : "text-rose-400";
+        return `
+          <div class="p-4 rounded-xl bg-slate-900/80 border border-slate-800 hover:border-slate-700 transition flex flex-col justify-between space-y-3">
+            <div class="flex items-start justify-between gap-2">
+              <div>
+                <div class="flex flex-wrap items-center gap-1.5">
+                  <span class="text-[10px] font-bold uppercase px-2 py-0.5 rounded border ${cat.badgeCls}">${f.rate_label}</span>
+                  <span class="text-[10px] font-semibold px-2 py-0.5 rounded bg-slate-800 text-slate-300">${f.tax_exempt ? "Isento de IR" : "IR Regressivo (" + f.ir_rate + "%)"}</span>
+                </div>
+                <h4 class="font-bold text-sm sm:text-base text-white mt-1.5">${f.title_name}</h4>
+                <p class="text-xs text-slate-400">${f.issuer} · Aplicado em ${f.start_date} (${f.days_elapsed} dias)</p>
+              </div>
+              <button onclick="deleteFixedIncome(${f.id})" title="Remover da carteira" class="px-2 py-1 rounded-lg bg-rose-500/10 hover:bg-rose-500/25 text-rose-400 text-xs border border-rose-500/20">
+                🗑️
+              </button>
+            </div>
+            <div class="grid grid-cols-2 sm:grid-cols-4 gap-2 pt-3 border-t border-slate-800/80 text-xs">
+              <div>
+                <span class="text-slate-400 block text-[11px]">Valor Aplicado</span>
+                <strong class="text-slate-200 font-mono">${fmtMoney(f.invested_amount)}</strong>
+              </div>
+              <div>
+                <span class="text-slate-400 block text-[11px]">Saldo Bruto Hoje</span>
+                <strong class="text-slate-200 font-mono">${fmtMoney(f.gross_amount)}</strong>
+              </div>
+              <div>
+                <span class="text-slate-400 block text-[11px]">Rendimento Líquido</span>
+                <strong class="${fProfCls} font-mono">+${fmtMoney(f.net_profit)} (${fmtPct(f.net_profit_pct)})</strong>
+              </div>
+              <div>
+                <span class="text-slate-400 block text-[11px]">Saldo Líquido Atual</span>
+                <strong class="text-emerald-400 text-sm font-black font-mono">${fmtMoney(f.net_amount)}</strong>
+              </div>
+            </div>
+          </div>
+        `;
+      }).join("");
+
+      bodyHtml = `<div class="grid grid-cols-1 md:grid-cols-2 gap-4">${cardsHtml}</div>`;
+    }
+
+    return `
+      <div class="glass-card rounded-2xl p-5 border-l-4 ${cat.borderColor} space-y-4">
+        <div class="flex flex-wrap items-center justify-between gap-3 pb-3 border-b border-slate-800/80">
+          <div class="flex items-center gap-3">
+            <span class="text-2xl">${cat.icon}</span>
+            <div>
+              <div class="flex items-center gap-2">
+                <h3 class="font-bold text-base text-white">${cat.title}</h3>
+                <span class="px-2 py-0.5 rounded-full text-[11px] font-bold ${cat.badgeCls}">${cat.items.length} ativo(s)</span>
+              </div>
+              <p class="text-xs text-slate-400">${cat.subtitle}</p>
+            </div>
+          </div>
+
+          <div class="flex flex-wrap items-center gap-4">
+            <div class="text-right text-xs">
+              <span class="text-slate-400 block">Subtotal da Categoria (${catWeightPct.toFixed(1)}%)</span>
+              <span class="font-mono font-black text-base text-white">${fmtMoney(catCurrent)}</span>
+              <span class="font-mono text-[11px] ${profCls} ml-1">(${fmtPct(catProfitPct)})</span>
+            </div>
+            <button onclick="${cat.addAction}" class="px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-emerald-400 font-bold text-xs border border-slate-700 transition">
+              ${cat.addLabel}
+            </button>
+          </div>
+        </div>
+        ${bodyHtml}
+      </div>
+    `;
+  }).join("");
 }
 
 async function loadRebalance() {
@@ -925,19 +1390,74 @@ function togglePrivacy() {
   }
 }
 
-function openTransactionModal(ticker = "", assetClass = "ACAO_BR", price = "", currency = "BRL") {
+function openAddInvestmentModal(type = "FII") {
+  if (["CAIXINHA", "RENDA_FIXA", "TESOURO"].includes(type)) {
+    openFixedIncomeModal(type);
+  } else {
+    openTransactionModal("", type, "", type === "STOCK_US" || type === "CRIPTO" ? "USD" : "BRL");
+  }
+}
+
+function openTransactionModal(ticker = "", assetClass = "FII", price = "", currency = "BRL") {
   document.getElementById("tx-ticker").value = ticker;
   document.getElementById("tx-class").value = assetClass;
   document.getElementById("tx-price").value = price;
   document.getElementById("tx-currency").value = currency;
+  document.getElementById("tx-lookup-feedback").textContent = "";
+  updateTxTotalPreview();
   const m = document.getElementById("modal-transaction");
   m.classList.remove("hidden");
   m.classList.add("flex");
 }
 
+function quickPickTicker(ticker, assetClass) {
+  document.getElementById("tx-ticker").value = ticker;
+  document.getElementById("tx-class").value = assetClass;
+  updateTxCurrency();
+  lookupTickerPrice();
+}
+
+async function lookupTickerPrice() {
+  const ticker = document.getElementById("tx-ticker").value.trim().toUpperCase();
+  const cls = document.getElementById("tx-class").value;
+  const fb = document.getElementById("tx-lookup-feedback");
+  if (!ticker) return;
+
+  fb.textContent = "⏳ Buscando cotação atual...";
+  try {
+    const res = await fetch(`/api/lookup-ticker?ticker=${encodeURIComponent(ticker)}&asset_class=${encodeURIComponent(cls)}`);
+    if (res.ok) {
+      const info = await res.json();
+      if (info && info.last_price > 0) {
+        const priceEl = document.getElementById("tx-price");
+        if (!priceEl.value || parseFloat(priceEl.value) <= 0) {
+          priceEl.value = info.last_price;
+        }
+        fb.textContent = `✓ ${info.name || info.ticker} — Cotação atual: ${fmtMoney(info.last_price, info.currency || "BRL")}`;
+        updateTxTotalPreview();
+      } else {
+        fb.textContent = "Informe o preço pago por cota abaixo.";
+      }
+    }
+  } catch (e) {
+    fb.textContent = "";
+  }
+}
+
+function updateTxTotalPreview() {
+  const q = parseFloat(document.getElementById("tx-qty").value || "0");
+  const p = parseFloat(document.getElementById("tx-price").value || "0");
+  const curr = document.getElementById("tx-currency").value || "BRL";
+  const el = document.getElementById("tx-total-preview");
+  if (el) {
+    el.textContent = fmtMoney(q * p, curr);
+  }
+}
+
 function updateTxCurrency() {
   const cls = document.getElementById("tx-class").value;
   document.getElementById("tx-currency").value = cls === "STOCK_US" || cls === "CRIPTO" ? "USD" : "BRL";
+  updateTxTotalPreview();
 }
 
 async function submitTransaction() {
@@ -952,7 +1472,7 @@ async function submitTransaction() {
     broker: document.getElementById("tx-broker").value,
   };
   if (!payload.ticker || payload.quantity <= 0 || payload.unit_price <= 0) {
-    alert("Preencha Ticker, Quantidade e Preço Unitário corretamente.");
+    alert("Preencha o Código (Ticker), Quantidade de Cotas e Preço Pago corretamente.");
     return;
   }
   await fetch("/api/transactions", {
@@ -960,29 +1480,128 @@ async function submitTransaction() {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload),
   });
+  document.getElementById("tx-qty").value = "";
+  document.getElementById("tx-price").value = "";
   closeModal("modal-transaction");
   await refreshAll();
 }
 
-function openFixedIncomeModal() {
+async function deleteVariablePosition(ticker) {
+  if (!confirm(`Deseja remover ${ticker} da sua carteira?`)) return;
+  await fetch(`/api/portfolio/position/${encodeURIComponent(ticker)}`, { method: "DELETE" });
+  await refreshAll();
+}
+
+async function clearEntirePortfolio() {
+  if (!confirm("Tem certeza que deseja zerar todos os investimentos da sua carteira?")) return;
+  await fetch("/api/portfolio/clear", { method: "POST" });
+  await refreshAll();
+}
+
+function openFixedIncomeModal(defaultCategory = "CAIXINHA") {
+  const catEl = document.getElementById("fi-category");
+  if (catEl && ["CAIXINHA", "RENDA_FIXA", "TESOURO", "FUNDO_INV"].includes(defaultCategory)) {
+    catEl.value = defaultCategory;
+  }
+  if (defaultCategory === "CAIXINHA") {
+    applyFixedIncomePreset("CAIXINHA_NUBANK");
+  } else if (defaultCategory === "TESOURO") {
+    applyFixedIncomePreset("TESOURO_IPCA");
+  } else if (defaultCategory === "RENDA_FIXA") {
+    applyFixedIncomePreset("CDB_CDI");
+  }
   const m = document.getElementById("modal-fixed-income");
   m.classList.remove("hidden");
   m.classList.add("flex");
 }
 
+function applyFixedIncomePreset(preset) {
+  const cat = document.getElementById("fi-category");
+  const issuer = document.getElementById("fi-issuer");
+  const name = document.getElementById("fi-name");
+  const indexer = document.getElementById("fi-indexer");
+  const rate = document.getElementById("fi-rate");
+  const exempt = document.getElementById("fi-exempt");
+
+  if (preset === "CAIXINHA_NUBANK") {
+    cat.value = "CAIXINHA";
+    issuer.value = "Nubank";
+    name.value = "Caixinha Nubank (Reserva)";
+    indexer.value = "CDI";
+    rate.value = "100";
+    exempt.checked = false;
+  } else if (preset === "CAIXINHA_TURBO") {
+    cat.value = "CAIXINHA";
+    issuer.value = "Nubank / Mercado Pago";
+    name.value = "Caixinha Turbo 110% CDI";
+    indexer.value = "CDI";
+    rate.value = "110";
+    exempt.checked = false;
+  } else if (preset === "CDB_CDI") {
+    cat.value = "RENDA_FIXA";
+    issuer.value = "Banco / Corretora";
+    name.value = "CDB Liquidez Diária";
+    indexer.value = "CDI";
+    rate.value = "105";
+    exempt.checked = false;
+  } else if (preset === "CDB_IPCA") {
+    cat.value = "RENDA_FIXA";
+    issuer.value = "Banco / Corretora";
+    name.value = "CDB IPCA+";
+    indexer.value = "IPCA";
+    rate.value = "6.8";
+    exempt.checked = false;
+  } else if (preset === "LCI_LCA") {
+    cat.value = "RENDA_FIXA";
+    issuer.value = "Banco Inter / Itaú / BB";
+    name.value = "LCI / LCA Isenta de IR";
+    indexer.value = "CDI";
+    rate.value = "93";
+    exempt.checked = true;
+  } else if (preset === "TESOURO_IPCA") {
+    cat.value = "TESOURO";
+    issuer.value = "Tesouro Nacional";
+    name.value = "Tesouro IPCA+ 2029";
+    indexer.value = "IPCA";
+    rate.value = "6.45";
+    exempt.checked = false;
+  } else if (preset === "TESOURO_SELIC") {
+    cat.value = "TESOURO";
+    issuer.value = "Tesouro Nacional";
+    name.value = "Tesouro Selic";
+    indexer.value = "SELIC";
+    rate.value = "0.10";
+    exempt.checked = false;
+  }
+  updateFiIndexerHint();
+}
+
+function updateFiIndexerHint() {
+  const idx = document.getElementById("fi-indexer").value;
+  const lbl = document.getElementById("fi-rate-label");
+  if (!lbl) return;
+  if (idx === "CDI") lbl.textContent = "Taxa (% do CDI — ex: 100 p/ 100% CDI)";
+  else if (idx === "IPCA") lbl.textContent = "Taxa Fixa Acima do IPCA (% a.a. — ex: 6.5)";
+  else if (idx === "SELIC") lbl.textContent = "Taxa Extra + Selic (% a.a. — ex: 0.1)";
+  else lbl.textContent = "Taxa Prefixada (% ao ano — ex: 12.5)";
+}
+
 async function submitFixedIncome() {
+  const category = document.getElementById("fi-category") ? document.getElementById("fi-category").value : "RENDA_FIXA";
   const payload = {
-    title_name: document.getElementById("fi-name").value.trim() || "CDB Pós-Fixado",
+    title_name: document.getElementById("fi-name").value.trim() || "Aplicação Renda Fixa",
     issuer: document.getElementById("fi-issuer").value.trim() || "Banco",
+    asset_class: category,
     indexer: document.getElementById("fi-indexer").value,
     rate_value: parseFloat(document.getElementById("fi-rate").value || "100"),
     invested_amount: parseFloat(document.getElementById("fi-amount").value || "0"),
     start_date: document.getElementById("fi-start").value,
     maturity_date: document.getElementById("fi-maturity").value,
     tax_exempt: document.getElementById("fi-exempt").checked ? 1 : 0,
+    broker: document.getElementById("fi-issuer").value.trim() || "Nubank",
   };
   if (payload.invested_amount <= 0) {
-    alert("Informe o valor aplicado.");
+    alert("Informe o valor aplicado em R$.");
     return;
   }
   await fetch("/api/fixed-income", {
@@ -990,11 +1609,13 @@ async function submitFixedIncome() {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload),
   });
+  document.getElementById("fi-amount").value = "";
   closeModal("modal-fixed-income");
   await refreshAll();
 }
 
 async function deleteFixedIncome(id) {
+  if (!confirm("Deseja remover este título/caixinha da sua carteira?")) return;
   await fetch(`/api/fixed-income/${id}`, { method: "DELETE" });
   await refreshAll();
 }

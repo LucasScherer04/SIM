@@ -418,6 +418,92 @@ def calculate_fixed_income_position(fi_row: dict, macro: dict):
     }
 
 
+def lookup_ticker_live(ticker: str, default_class: str = "ACAO_BR"):
+    """Looks up a ticker in assets_catalog or fetches live from Yahoo Finance."""
+    ticker = ticker.upper().strip().replace(".SA", "")
+    conn = get_conn()
+    row = conn.execute("SELECT * FROM assets_catalog WHERE ticker = ?", (ticker,)).fetchone()
+    conn.close()
+    if row:
+        return dict(row)
+
+    # Guess asset class if not specified
+    cls = default_class.upper()
+    if ticker.endswith("11") and cls not in ("ACAO_BR", "ETF_BR", "FII"):
+        cls = "FII"
+
+    yf_sym = f"{ticker}.SA" if cls in ("ACAO_BR", "FII", "ETF_BR") else (f"{ticker}-USD" if cls == "CRIPTO" else ticker)
+    currency = "USD" if cls in ("STOCK_US", "CRIPTO") else "BRL"
+    name = ticker
+    sector = "Fundo Imobiliário" if cls == "FII" else ("Ações B3" if cls == "ACAO_BR" else "Mercado")
+    last_price = 0.0
+    change_pct = 0.0
+    volume_day = 0.0
+    dy_12m = 0.0
+    last_div = 0.0
+    pvp = 1.0
+    pl = 0.0
+
+    try:
+        tk = yf.Ticker(yf_sym)
+        hist = tk.history(period="5d", interval="1d")
+        if hist is not None and not hist.empty:
+            closes = hist["Close"].dropna()
+            vols = hist["Volume"].dropna()
+            if len(closes) >= 1:
+                last_price = round(float(closes.iloc[-1]), 2)
+                prev_p = float(closes.iloc[-2]) if len(closes) >= 2 else last_price
+                change_pct = round(((last_price - prev_p) / prev_p * 100.0) if prev_p > 0 else 0.0, 2)
+                if len(vols) >= 1:
+                    volume_day = round(float(vols.iloc[-1]) * last_price, 0)
+        try:
+            divs = tk.dividends
+            if divs is not None and len(divs) > 0:
+                last_div = round(float(divs.iloc[-1]), 4)
+                recent_divs = divs.tail(12)
+                if last_price > 0:
+                    dy_12m = round((float(recent_divs.sum()) / last_price) * 100.0, 2)
+        except Exception:
+            pass
+        try:
+            info = tk.fast_info
+            if hasattr(info, "last_price") and last_price <= 0 and info.last_price:
+                last_price = round(float(info.last_price), 2)
+        except Exception:
+            pass
+    except Exception:
+        pass
+
+    if last_price > 0:
+        conn = get_conn()
+        now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        conn.execute("""
+            INSERT OR REPLACE INTO assets_catalog (
+                ticker, name, asset_class, currency, sector, cnpj,
+                last_price, change_pct, volume_day, dy_12m, pl, pvp,
+                last_dividend_per_share, last_div_ex_date, last_div_pay_date, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """, (
+            ticker, name, cls, currency, sector, "",
+            last_price, change_pct, volume_day, dy_12m, pl, pvp,
+            last_div, "", "", now_str
+        ))
+        conn.commit()
+        conn.close()
+
+    return {
+        "ticker": ticker,
+        "name": name,
+        "asset_class": cls,
+        "currency": currency,
+        "sector": sector,
+        "last_price": last_price,
+        "change_pct": change_pct,
+        "dy_12m": dy_12m,
+        "last_dividend_per_share": last_div,
+    }
+
+
 def get_portfolio_summary():
     sync_yfinance_quotes_background()
     macro = fetch_macro_indicators()
@@ -428,7 +514,7 @@ def get_portfolio_summary():
     catalog = {r["ticker"]: dict(r) for r in catalog_rows}
 
     tx_rows = conn.execute("SELECT * FROM transactions ORDER BY tx_date ASC, id ASC").fetchall()
-    fi_rows = conn.execute("SELECT * FROM fixed_income ORDER BY start_date ASC").fetchall()
+    fi_rows = conn.execute("SELECT * FROM fixed_income ORDER BY start_date ASC, id ASC").fetchall()
     div_rows = conn.execute("SELECT * FROM dividends_received ORDER BY pay_date DESC").fetchall()
     target_rows = conn.execute("SELECT * FROM allocation_targets").fetchall()
     conn.close()
@@ -459,7 +545,7 @@ def get_portfolio_summary():
                 "quantity": 0.0,
                 "avg_price": 0.0,
                 "avg_fx": fx,
-                "broker": tx["broker"] or "XP",
+                "broker": tx["broker"] or "Corretora",
             }
 
         pos = positions_map[t]
@@ -470,6 +556,7 @@ def get_portfolio_summary():
             pos["avg_price"] = new_cost / pos["quantity"] if pos["quantity"] > 0 else 0.0
             pos["avg_fx"] = fx
             pos["broker"] = tx["broker"] or pos["broker"]
+            pos["asset_class"] = cls or pos["asset_class"]
         elif tx["tx_type"] == "SELL":
             gain_native = (p - pos["avg_price"]) * q - f
             realized_profit_brl += gain_native * (usd_brl if curr == "USD" else 1.0)
@@ -479,20 +566,30 @@ def get_portfolio_summary():
     total_invested_brl = 0.0
     total_current_brl = 0.0
     day_change_brl = 0.0
-    class_totals_brl = {
-        "ACAO_BR": 0.0,
-        "FII": 0.0,
-        "RENDA_FIXA": 0.0,
-        "STOCK_US": 0.0,
-        "CRIPTO": 0.0,
-        "ETF_BR": 0.0,
+
+    class_meta = {
+        "FII": "Fundos Imobiliários (FIIs)",
+        "ACAO_BR": "Ações Brasileiras (B3)",
+        "CAIXINHA": "Caixinhas & Liquidez (Nubank/Bancos)",
+        "RENDA_FIXA": "CDB, LCI, LCA & Renda Fixa",
+        "TESOURO": "Tesouro Direto (IPCA+ / Selic)",
+        "FUNDO_INV": "Fundos de Investimento",
+        "ETF_BR": "ETFs & BDRs",
+        "STOCK_US": "Stocks EUA (Dólar)",
+        "CRIPTO": "Criptomoedas",
     }
+
+    class_stats = {
+        k: {"invested_brl": 0.0, "current_brl": 0.0, "count": 0}
+        for k in class_meta.keys()
+    }
+    all_holdings_slices = []
 
     for t, pos in positions_map.items():
         if pos["quantity"] <= 1e-8:
             continue
         cat = catalog.get(t, {})
-        cur_price = float(cat.get("last_price", pos["avg_price"]))
+        cur_price = float(cat.get("last_price", 0.0)) or pos["avg_price"]
         chg_pct = float(cat.get("change_pct", 0.0))
         dy_12m = float(cat.get("dy_12m", 0.0))
         last_div = float(cat.get("last_dividend_per_share", 0.0))
@@ -504,7 +601,6 @@ def get_portfolio_summary():
 
         invested_native = pos["quantity"] * pos["avg_price"]
         current_native = pos["quantity"] * cur_price
-        profit_native = current_native - invested_native
         profit_pct = ((cur_price - pos["avg_price"]) / pos["avg_price"] * 100.0) if pos["avg_price"] > 0 else 0.0
 
         invested_brl = invested_native * mult
@@ -515,13 +611,18 @@ def get_portfolio_summary():
         total_invested_brl += invested_brl
         total_current_brl += current_brl
         day_change_brl += day_var_brl
-        cls_key = pos["asset_class"] if pos["asset_class"] in class_totals_brl else "ACAO_BR"
-        class_totals_brl[cls_key] = class_totals_brl.get(cls_key, 0.0) + current_brl
+
+        cls_key = pos["asset_class"] if pos["asset_class"] in class_stats else "ACAO_BR"
+        class_stats[cls_key]["invested_brl"] += invested_brl
+        class_stats[cls_key]["current_brl"] += current_brl
+        class_stats[cls_key]["count"] += 1
 
         yoc = (dy_12m * cur_price / pos["avg_price"]) if pos["avg_price"] > 0 else 0.0
 
-        positions.append({
+        item_dict = {
             **pos,
+            "asset_class": cls_key,
+            "category_label": class_meta.get(cls_key, cls_key),
             "quantity": round(pos["quantity"], 6),
             "avg_price": round(pos["avg_price"], 2),
             "current_price": round(cur_price, 2),
@@ -536,42 +637,96 @@ def get_portfolio_summary():
             "current_brl": round(current_brl, 2),
             "profit_brl": round(profit_brl, 2),
             "profit_pct": round(profit_pct, 2),
+        }
+        positions.append(item_dict)
+        all_holdings_slices.append({
+            "id": f"VAR_{t}",
+            "code": t,
+            "name": pos["name"] if pos["name"] != t else t,
+            "asset_class": cls_key,
+            "category_label": class_meta.get(cls_key, cls_key),
+            "invested_brl": round(invested_brl, 2),
+            "current_brl": round(current_brl, 2),
+            "profit_brl": round(profit_brl, 2),
+            "profit_pct": round(profit_pct, 2),
+            "broker": pos["broker"],
+            "is_fixed_income": False,
         })
 
-    # Fixed income positions
+    # Fixed income positions (Caixinhas, CDB, LCI, LCA, Tesouro IPCA+/Selic, Fundos)
     fi_positions = []
     for r in fi_rows:
         fi_calc = calculate_fixed_income_position(dict(r), macro)
+        raw_cls = (fi_calc.get("asset_class") or "RENDA_FIXA").upper()
+        title_lower = (fi_calc.get("title_name") or "").lower()
+        if raw_cls not in class_stats:
+            if "caixinha" in title_lower or "reserva" in title_lower:
+                raw_cls = "CAIXINHA"
+            elif "tesouro" in title_lower:
+                raw_cls = "TESOURO"
+            else:
+                raw_cls = "RENDA_FIXA"
+        elif raw_cls == "RENDA_FIXA" and "caixinha" in title_lower:
+            raw_cls = "CAIXINHA"
+        elif raw_cls == "RENDA_FIXA" and "tesouro" in title_lower:
+            raw_cls = "TESOURO"
+
+        fi_calc["asset_class"] = raw_cls
+        fi_calc["category_label"] = class_meta.get(raw_cls, "Renda Fixa")
         fi_positions.append(fi_calc)
+
         total_invested_brl += fi_calc["invested_amount"]
         total_current_brl += fi_calc["net_amount"]
-        # Daily CDI increment (~0.04% per business day)
         day_change_brl += fi_calc["net_amount"] * ((macro.get("cdi", 10.65) / 100.0) / 252.0)
-        class_totals_brl["RENDA_FIXA"] = class_totals_brl.get("RENDA_FIXA", 0.0) + fi_calc["net_amount"]
 
-    # Sort variable positions by current_brl descending
+        class_stats[raw_cls]["invested_brl"] += fi_calc["invested_amount"]
+        class_stats[raw_cls]["current_brl"] += fi_calc["net_amount"]
+        class_stats[raw_cls]["count"] += 1
+
+        all_holdings_slices.append({
+            "id": f"FI_{fi_calc['id']}",
+            "code": fi_calc["title_name"],
+            "name": f"{fi_calc['issuer']} ({fi_calc['rate_label']})",
+            "asset_class": raw_cls,
+            "category_label": class_meta.get(raw_cls, "Renda Fixa"),
+            "invested_brl": round(fi_calc["invested_amount"], 2),
+            "current_brl": round(fi_calc["net_amount"], 2),
+            "profit_brl": round(fi_calc["net_profit"], 2),
+            "profit_pct": round(fi_calc["net_profit_pct"], 2),
+            "broker": fi_calc.get("broker") or fi_calc["issuer"],
+            "is_fixed_income": True,
+            "fi_id": fi_calc["id"],
+        })
+
+    # Sort variable positions and all_holdings_slices by current_brl descending
     positions.sort(key=lambda x: x["current_brl"], reverse=True)
     for p in positions:
         p["weight_pct"] = round((p["current_brl"] / total_current_brl * 100.0) if total_current_brl > 0 else 0.0, 2)
 
-    # Allocation breakdown & rebalancing
-    class_labels = {
-        "ACAO_BR": "Ações Brasil (B3)",
-        "FII": "Fundos Imobiliários (FIIs)",
-        "RENDA_FIXA": "Renda Fixa & Tesouro",
-        "STOCK_US": "Stocks EUA (Dólar)",
-        "CRIPTO": "Criptomoedas",
-        "ETF_BR": "ETFs & BDRs",
-    }
+    for fi in fi_positions:
+        fi["weight_pct"] = round((fi["net_amount"] / total_current_brl * 100.0) if total_current_brl > 0 else 0.0, 2)
+
+    all_holdings_slices.sort(key=lambda x: x["current_brl"], reverse=True)
+    for h in all_holdings_slices:
+        h["weight_pct"] = round((h["current_brl"] / total_current_brl * 100.0) if total_current_brl > 0 else 0.0, 2)
+
     allocation = []
-    for cls_code, label in class_labels.items():
-        val_brl = round(class_totals_brl.get(cls_code, 0.0), 2)
+    for cls_code, label in class_meta.items():
+        st = class_stats[cls_code]
+        val_brl = round(st["current_brl"], 2)
+        inv_brl = round(st["invested_brl"], 2)
+        prof_brl = round(val_brl - inv_brl, 2)
+        prof_pct = round((prof_brl / inv_brl * 100.0) if inv_brl > 0 else 0.0, 2)
         cur_pct = round((val_brl / total_current_brl * 100.0) if total_current_brl > 0 else 0.0, 2)
         tgt_pct = round(targets.get(cls_code, 0.0), 2)
         allocation.append({
             "asset_class": cls_code,
             "label": label,
+            "count": st["count"],
+            "invested_brl": inv_brl,
             "current_brl": val_brl,
+            "profit_brl": prof_brl,
+            "profit_pct": prof_pct,
             "current_pct": cur_pct,
             "target_pct": tgt_pct,
             "gap_pct": round(tgt_pct - cur_pct, 2),
@@ -583,7 +738,7 @@ def get_portfolio_summary():
 
     dividends_list = [dict(d) for d in div_rows]
     total_dividends_brl = round(sum(float(d["total_amount"]) for d in dividends_list), 2)
-    estimated_monthly_divs_brl = round(sum(p["monthly_passive_income_brl"] for p in positions if p["asset_class"] == "FII"), 2)
+    estimated_monthly_divs_brl = round(sum(p["monthly_passive_income_brl"] for p in positions if p["asset_class"] in ("FII", "ACAO_BR")), 2)
 
     return {
         "kpis": {
@@ -597,9 +752,11 @@ def get_portfolio_summary():
             "realized_profit_brl": round(realized_profit_brl, 2),
             "total_dividends_brl": total_dividends_brl,
             "estimated_monthly_divs_brl": estimated_monthly_divs_brl,
+            "holdings_count": len(all_holdings_slices),
         },
         "macro": macro,
         "allocation": allocation,
+        "allocation_by_asset": all_holdings_slices,
         "positions": positions,
         "fixed_income": fi_positions,
         "dividends": dividends_list,

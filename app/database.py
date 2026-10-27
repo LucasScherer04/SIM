@@ -165,60 +165,13 @@ def init_db():
         ("ACAO_BR", 25.0),
         ("FII", 25.0),
         ("RENDA_FIXA", 30.0),
-        ("STOCK_US", 10.0),
+        ("TESOURO", 10.0),
+        ("STOCK_US", 5.0),
         ("CRIPTO", 5.0),
-        ("ETF_BR", 5.0),
+        ("ETF_BR", 0.0),
     ]
     for cls, pct in default_targets:
         cur.execute("INSERT OR IGNORE INTO allocation_targets (asset_class, target_pct) VALUES (?, ?)", (cls, pct))
-
-    # Seed sample transactions if database is brand new so the user sees a complete working portfolio out of the box
-    tx_count = cur.execute("SELECT COUNT(*) FROM transactions").fetchone()[0]
-    fi_count = cur.execute("SELECT COUNT(*) FROM fixed_income").fetchone()[0]
-
-    if tx_count == 0 and fi_count == 0:
-        sample_txs = [
-            ("2026-01-15", "PETR4", "ACAO_BR", "BUY", 100, 34.20, 0.0, "BRL", 1.0, "XP Investimentos", "Aporte inicial"),
-            ("2026-03-10", "WEGE3", "ACAO_BR", "BUY", 60, 46.50, 0.0, "BRL", 1.0, "XP Investimentos", "Aporte longo prazo"),
-            ("2026-04-05", "ITUB4", "ACAO_BR", "BUY", 100, 32.80, 0.0, "BRL", 1.0, "BTG Pactual", "Bancos"),
-            ("2026-02-12", "MXRF11", "FII", "BUY", 350, 9.75, 0.0, "BRL", 1.0, "XP Investimentos", "FII Papel"),
-            ("2026-03-18", "HGLG11", "FII", "BUY", 25, 154.00, 0.0, "BRL", 1.0, "XP Investimentos", "FII Logística"),
-            ("2026-05-20", "XPML11", "FII", "BUY", 30, 105.50, 0.0, "BRL", 1.0, "BTG Pactual", "FII Shopping"),
-            ("2026-06-10", "NVDA", "STOCK_US", "BUY", 4.5, 118.00, 0.0, "USD", 5.65, "Avenue", "IA & Semicondutores"),
-            ("2026-07-01", "BTC", "CRIPTO", "BUY", 0.015, 76500.00, 0.0, "USD", 5.70, "Binance", "Reserva Bitcoin"),
-        ]
-        cur.executemany("""
-        INSERT INTO transactions (tx_date, ticker, asset_class, tx_type, quantity, unit_price, fees, currency, fx_rate, broker, notes)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        """, sample_txs)
-
-        sample_fi = [
-            ("Caixinha Reserva de Emergência", "Nubank", "RENDA_FIXA", "CDI", 100.0, 8500.00, "2025-11-10", "2028-11-10", 1, 0, "Nubank"),
-            ("LCI Banco Inter 94% CDI", "Banco Inter", "RENDA_FIXA", "CDI", 94.0, 5000.00, "2026-02-01", "2027-08-01", 0, 1, "Banco Inter"),
-            ("Tesouro IPCA+ 2029", "Tesouro Nacional", "TESOURO", "IPCA", 6.35, 4200.00, "2026-01-20", "2029-05-15", 1, 0, "BTG Pactual"),
-        ]
-        cur.executemany("""
-        INSERT INTO fixed_income (title_name, issuer, asset_class, indexer, rate_value, invested_amount, start_date, maturity_date, daily_liquidity, tax_exempt, broker)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        """, sample_fi)
-
-        sample_divs = [
-            ("2026-08-15", "MXRF11", "Rendimento FII", 0.10, 350, 35.00, "BRL"),
-            ("2026-08-15", "HGLG11", "Rendimento FII", 1.10, 25, 27.50, "BRL"),
-            ("2026-08-25", "XPML11", "Rendimento FII", 0.92, 30, 27.60, "BRL"),
-            ("2026-09-15", "MXRF11", "Rendimento FII", 0.10, 350, 35.00, "BRL"),
-            ("2026-09-15", "HGLG11", "Rendimento FII", 1.10, 25, 27.50, "BRL"),
-            ("2026-09-20", "PETR4", "Dividendo / JCP", 0.92, 100, 92.00, "BRL"),
-            ("2026-09-25", "XPML11", "Rendimento FII", 0.92, 30, 27.60, "BRL"),
-            ("2026-10-15", "MXRF11", "Rendimento FII", 0.10, 350, 35.00, "BRL"),
-            ("2026-10-15", "HGLG11", "Rendimento FII", 1.10, 25, 27.50, "BRL"),
-            ("2026-10-15", "WEGE3", "Dividendo", 0.24, 60, 14.40, "BRL"),
-            ("2026-10-25", "XPML11", "Rendimento FII", 0.92, 30, 27.60, "BRL"),
-        ]
-        cur.executemany("""
-        INSERT INTO dividends_received (pay_date, ticker, div_type, amount_per_share, shares_qty, total_amount, currency)
-        VALUES (?, ?, ?, ?, ?, ?, ?)
-        """, sample_divs)
 
     conn.commit()
     conn.close()

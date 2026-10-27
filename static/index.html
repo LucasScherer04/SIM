@@ -96,11 +96,8 @@
           <button onclick="openMobileModal()" class="px-3 py-2 rounded-lg bg-slate-800/90 hover:bg-slate-700 text-slate-200 border border-slate-700/70 text-xs font-semibold flex items-center gap-1.5">
             <span>📱</span> <span class="hidden sm:inline">App Celular</span>
           </button>
-          <button onclick="openFixedIncomeModal()" class="px-3 py-2 rounded-lg bg-indigo-500/15 hover:bg-indigo-500/25 text-indigo-300 border border-indigo-500/30 text-xs font-semibold hidden sm:flex items-center gap-1">
-            <span>+ Renda Fixa</span>
-          </button>
-          <button onclick="openTransactionModal()" class="px-3.5 py-2 rounded-lg bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold text-xs sm:text-sm shadow-lg shadow-emerald-950/60 transition flex items-center gap-1">
-            <span>+ Lançar Ordem</span>
+          <button onclick="openAddInvestmentModal()" class="px-3.5 py-2 rounded-lg bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold text-xs sm:text-sm shadow-lg shadow-emerald-950/60 transition flex items-center gap-1.5">
+            <span>+ Adicionar à Carteira</span>
           </button>
         </div>
       </div>
@@ -108,16 +105,16 @@
       <!-- Top Navigation Bar (Abas por Classe de Ativo mapeadas) -->
       <nav class="flex items-center gap-1.5 overflow-x-auto no-scrollbar pt-1">
         <button onclick="switchMainTab('DASHBOARD')" id="tab-DASHBOARD" class="nav-tab tab-active px-4 py-2.5 text-xs sm:text-sm font-semibold border-b-2 border-transparent rounded-t-lg whitespace-nowrap transition flex items-center gap-1.5">
-          <span>📊</span> Visão Geral
+          <span>💼</span> Minha Carteira
         </button>
         <button onclick="switchMainTab('ACAO_BR')" id="tab-ACAO_BR" class="nav-tab text-slate-400 hover:text-slate-200 px-4 py-2.5 text-xs sm:text-sm font-semibold border-b-2 border-transparent rounded-t-lg whitespace-nowrap transition flex items-center gap-1.5">
-          <span>🇧🇷</span> Ações B3
+          <span>🇧🇷</span> Explorar Ações B3
         </button>
         <button onclick="switchMainTab('FII')" id="tab-FII" class="nav-tab text-slate-400 hover:text-slate-200 px-4 py-2.5 text-xs sm:text-sm font-semibold border-b-2 border-transparent rounded-t-lg whitespace-nowrap transition flex items-center gap-1.5">
-          <span>🏢</span> FIIs (Imobiliários)
+          <span>🏢</span> Explorar FIIs
         </button>
         <button onclick="switchMainTab('RENDA_FIXA')" id="tab-RENDA_FIXA" class="nav-tab text-slate-400 hover:text-slate-200 px-4 py-2.5 text-xs sm:text-sm font-semibold border-b-2 border-transparent rounded-t-lg whitespace-nowrap transition flex items-center gap-1.5">
-          <span>🏦</span> Renda Fixa & CDI
+          <span>🏦</span> Renda Fixa & Caixinhas
         </button>
         <button onclick="switchMainTab('STOCK_US')" id="tab-STOCK_US" class="nav-tab text-slate-400 hover:text-slate-200 px-4 py-2.5 text-xs sm:text-sm font-semibold border-b-2 border-transparent rounded-t-lg whitespace-nowrap transition flex items-center gap-1.5">
           <span>🇺🇸</span> Stocks EUA
@@ -138,87 +135,165 @@
   <!-- 3. MAIN CONTENT AREA -->
   <main class="flex-1 max-w-7xl w-full mx-auto px-4 lg:px-8 py-6 space-y-6">
 
-    <!-- ==================== VIEW A: DASHBOARD CONSOLIDADO ==================== -->
+    <!-- ==================== VIEW A: MINHA CARTEIRA (COM 2 ABAS: GRÁFICO REDONDO E LISTA POR CATEGORIAS) ==================== -->
     <section id="view-DASHBOARD" class="space-y-6">
       <!-- KPI Cards -->
       <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4" id="kpi-cards-container"></div>
 
-      <!-- Allocation & Smart Rebalancing Row -->
-      <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
-        <!-- Allocation Donut & Breakdown -->
-        <div class="lg:col-span-7 glass-card rounded-2xl p-5">
-          <div class="flex items-center justify-between mb-4">
-            <div>
-              <h2 class="font-bold text-base text-white">Alocação da Carteira por Classe</h2>
-              <p class="text-xs text-slate-400">Clique em uma classe no topo para explorar os ativos</p>
-            </div>
-            <span id="usd-equivalent-badge" class="text-xs font-mono px-2.5 py-1 rounded-lg bg-slate-800 text-slate-300"></span>
-          </div>
-          <div class="grid grid-cols-1 sm:grid-cols-12 gap-4 items-center">
-            <div class="sm:col-span-5 flex justify-center">
-              <canvas id="allocation-canvas" width="210" height="210"></canvas>
-            </div>
-            <div class="sm:col-span-7 space-y-2.5" id="allocation-bars-list"></div>
-          </div>
+      <!-- Barra de Abas Internas da "Minha Carteira" + Ações Rápidas -->
+      <div class="glass-card rounded-2xl p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+        <div class="flex items-center gap-2 bg-slate-900/90 p-1.5 rounded-xl border border-slate-800">
+          <button onclick="switchPortfolioSubTab('CHART')" id="subtab-CHART" class="pill-active px-4 py-2 rounded-lg text-xs sm:text-sm font-bold transition flex items-center gap-2">
+            <span>🥧</span> 1. Gráfico de Distribuição
+          </button>
+          <button onclick="switchPortfolioSubTab('CATEGORIES')" id="subtab-CATEGORIES" class="px-4 py-2 rounded-lg text-xs sm:text-sm font-bold text-slate-300 hover:text-white transition flex items-center gap-2">
+            <span>📋</span> 2. Meus Investimentos por Categoria
+            <span id="portfolio-count-badge" class="px-2 py-0.5 rounded-full text-[11px] bg-slate-800 text-emerald-400">0</span>
+          </button>
         </div>
 
-        <!-- Smart Rebalancer ("Onde aportar hoje?") -->
-        <div class="lg:col-span-5 glass-card rounded-2xl p-5 flex flex-col justify-between">
-          <div>
-            <div class="flex items-center justify-between mb-2">
-              <h2 class="font-bold text-base text-white flex items-center gap-2">
-                <span>🎯</span> Onde Aportar Hoje?
-              </h2>
-              <span class="text-[11px] px-2 py-0.5 rounded bg-emerald-500/15 text-emerald-400 font-semibold">Rebalanceamento</span>
-            </div>
-            <p class="text-xs text-slate-400 mb-3">Digite o valor do seu novo aporte e veja quanto investir em cada classe para atingir sua meta ideal:</p>
-            <div class="flex items-center gap-2 mb-4">
-              <div class="relative flex-1">
-                <span class="absolute left-3 top-2 text-xs text-slate-400 font-bold">R$</span>
-                <input type="number" id="input-rebalance-amount" value="2000" step="100"
-                  class="w-full pl-9 pr-3 py-1.5 rounded-lg bg-slate-900 border border-slate-700 text-sm text-white font-semibold focus:outline-none focus:border-emerald-500" />
+        <div class="flex flex-wrap items-center gap-2">
+          <button onclick="openAddInvestmentModal('FII')" class="px-3 py-1.5 rounded-lg bg-blue-500/15 hover:bg-blue-500/25 text-blue-300 border border-blue-500/30 text-xs font-semibold transition">
+            + FII
+          </button>
+          <button onclick="openAddInvestmentModal('ACAO_BR')" class="px-3 py-1.5 rounded-lg bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-300 border border-emerald-500/30 text-xs font-semibold transition">
+            + Ação
+          </button>
+          <button onclick="openAddInvestmentModal('CAIXINHA')" class="px-3 py-1.5 rounded-lg bg-purple-500/15 hover:bg-purple-500/25 text-purple-300 border border-purple-500/30 text-xs font-semibold transition">
+            + Caixinha Nubank
+          </button>
+          <button onclick="openAddInvestmentModal('RENDA_FIXA')" class="px-3 py-1.5 rounded-lg bg-indigo-500/15 hover:bg-indigo-500/25 text-indigo-300 border border-indigo-500/30 text-xs font-semibold transition">
+            + CDB / LCI / IPCA+
+          </button>
+          <button onclick="clearEntirePortfolio()" id="btn-clear-portfolio" class="hidden px-2.5 py-1.5 rounded-lg bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/25 text-xs font-medium transition" title="Limpar todos os investimentos da carteira">
+            🗑️ Zerar Carteira
+          </button>
+        </div>
+      </div>
+
+      <!-- ESTADO VAZIO (QUANDO A CARTEIRA AINDA NÃO TEM ATIVOS) -->
+      <div id="portfolio-empty-state" class="hidden glass-card rounded-2xl p-8 text-center border border-dashed border-emerald-500/40 space-y-5">
+        <div class="w-16 h-16 rounded-2xl bg-emerald-500/15 border border-emerald-500/30 flex items-center justify-center mx-auto text-3xl">
+          💼
+        </div>
+        <div class="max-w-xl mx-auto space-y-2">
+          <h2 class="text-xl font-black text-white">Monte a Sua Carteira de Investimentos</h2>
+          <p class="text-xs sm:text-sm text-slate-300 leading-relaxed">
+            Sua carteira está limpa e pronta! Adicione os investimentos que você já comprou — sejam <strong>Fundos Imobiliários (FIIs)</strong>, <strong>Ações</strong>, <strong>Caixinha do Nubank</strong>, <strong>CDBs</strong>, <strong>LCI/LCA</strong> ou <strong>Tesouro IPCA+</strong> — para ver o gráfico redondo de distribuição e acompanhar tudo ao vivo.
+          </p>
+        </div>
+        <div class="flex flex-wrap items-center justify-center gap-3 pt-2">
+          <button onclick="openAddInvestmentModal('FII')" class="px-4 py-2.5 rounded-xl bg-blue-500 hover:bg-blue-400 text-slate-950 font-bold text-xs sm:text-sm shadow-lg transition">
+            🏢 Adicionar Fundo Imobiliário (FII)
+          </button>
+          <button onclick="openAddInvestmentModal('ACAO_BR')" class="px-4 py-2.5 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold text-xs sm:text-sm shadow-lg transition">
+            🇧🇷 Adicionar Ação (B3)
+          </button>
+          <button onclick="openAddInvestmentModal('CAIXINHA')" class="px-4 py-2.5 rounded-xl bg-purple-500 hover:bg-purple-400 text-white font-bold text-xs sm:text-sm shadow-lg transition">
+            💜 Adicionar Caixinha Nubank / CDI
+          </button>
+          <button onclick="openAddInvestmentModal('RENDA_FIXA')" class="px-4 py-2.5 rounded-xl bg-indigo-500 hover:bg-indigo-400 text-white font-bold text-xs sm:text-sm shadow-lg transition">
+            🏦 Adicionar CDB / LCI / Tesouro IPCA+
+          </button>
+        </div>
+      </div>
+
+      <!-- SUB-ABA 1: GRÁFICO REDONDO DE DISTRIBUIÇÃO DA CARTEIRA -->
+      <div id="portfolio-subview-CHART" class="space-y-6">
+        <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
+          <!-- Gráfico Redondo Interativo & Legenda -->
+          <div class="lg:col-span-8 glass-card rounded-2xl p-5 sm:p-6">
+            <div class="flex flex-wrap items-center justify-between gap-3 mb-5">
+              <div>
+                <h2 class="font-bold text-base sm:text-lg text-white">Distribuição da Minha Carteira</h2>
+                <p class="text-xs text-slate-400">Passe o mouse sobre as fatias do gráfico redondo ou clique em uma categoria para ver os detalhes</p>
               </div>
-              <button onclick="loadRebalance()" class="px-3.5 py-1.5 rounded-lg bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold text-xs">
-                Calcular
+              <div class="flex items-center gap-1.5 bg-slate-900 p-1 rounded-xl border border-slate-800">
+                <button onclick="setDonutMode('CATEGORY')" id="donut-mode-CATEGORY" class="pill-active px-3 py-1 rounded-lg text-xs font-bold transition">
+                  Por Categoria
+                </button>
+                <button onclick="setDonutMode('ASSET')" id="donut-mode-ASSET" class="px-3 py-1 rounded-lg text-xs font-bold text-slate-300 hover:text-white transition">
+                  Por Ativo / Fundo
+                </button>
+              </div>
+            </div>
+
+            <div class="grid grid-cols-1 md:grid-cols-12 gap-6 items-center">
+              <div class="md:col-span-5 flex flex-col items-center justify-center relative">
+                <canvas id="allocation-canvas" width="260" height="260" class="cursor-pointer"></canvas>
+                <span id="usd-equivalent-badge" class="mt-2 text-[11px] font-mono px-2.5 py-1 rounded-lg bg-slate-800/90 text-slate-300"></span>
+              </div>
+              <div class="md:col-span-7 space-y-2.5 max-h-[340px] overflow-y-auto pr-1" id="allocation-bars-list"></div>
+            </div>
+          </div>
+
+          <!-- Smart Rebalancer ("Onde aportar hoje?") -->
+          <div class="lg:col-span-4 glass-card rounded-2xl p-5 flex flex-col justify-between">
+            <div>
+              <div class="flex items-center justify-between mb-2">
+                <h2 class="font-bold text-base text-white flex items-center gap-2">
+                  <span>🎯</span> Onde Aportar Hoje?
+                </h2>
+                <span class="text-[11px] px-2 py-0.5 rounded bg-emerald-500/15 text-emerald-400 font-semibold">Rebalanceamento</span>
+              </div>
+              <p class="text-xs text-slate-400 mb-3">Digite o valor de um novo aporte e veja a sugestão por categoria:</p>
+              <div class="flex items-center gap-2 mb-4">
+                <div class="relative flex-1">
+                  <span class="absolute left-3 top-2 text-xs text-slate-400 font-bold">R$</span>
+                  <input type="number" id="input-rebalance-amount" value="2000" step="100"
+                    class="w-full pl-9 pr-3 py-1.5 rounded-lg bg-slate-900 border border-slate-700 text-sm text-white font-semibold focus:outline-none focus:border-emerald-500" />
+                </div>
+                <button onclick="loadRebalance()" class="px-3.5 py-1.5 rounded-lg bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold text-xs">
+                  Calcular
+                </button>
+              </div>
+              <div id="rebalance-results" class="space-y-2"></div>
+            </div>
+
+            <div class="mt-4 pt-3 border-t border-slate-800 flex items-center justify-between text-xs">
+              <span class="text-slate-400">Ver lista completa de ativos:</span>
+              <button onclick="switchPortfolioSubTab('CATEGORIES')" class="text-emerald-400 hover:text-emerald-300 font-bold">
+                Abrir Lista por Categorias →
               </button>
             </div>
-            <div id="rebalance-results" class="space-y-2"></div>
           </div>
         </div>
       </div>
 
-      <!-- Portfolio Positions Table -->
-      <div class="glass-card rounded-2xl p-5">
-        <div class="flex flex-wrap items-center justify-between gap-2 mb-4">
-          <div>
-            <h2 class="font-bold text-base text-white">Meus Ativos em Carteira (Renda Variável & Cripto)</h2>
-            <p class="text-xs text-slate-400">Clique em qualquer ativo para abrir a <strong>Página Exclusiva</strong> com Gráfico Interativo, Dividendo por Cota, Notícias e Relatórios IA</p>
-          </div>
-          <div class="flex gap-2">
-            <button onclick="openTransactionModal()" class="px-3 py-1.5 rounded-lg bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 border border-emerald-500/30 text-xs font-semibold">
-              + Compra / Venda
+      <!-- SUB-ABA 2: LISTA DE INVESTIMENTOS SEPARADA POR CATEGORIAS -->
+      <div id="portfolio-subview-CATEGORIES" class="hidden space-y-5">
+        <!-- Filtro Rápido de Categoria -->
+        <div class="glass-card rounded-2xl p-4 flex flex-wrap items-center justify-between gap-3">
+          <div class="flex items-center gap-2 overflow-x-auto no-scrollbar" id="category-filter-pills">
+            <button onclick="setCategoryListFilter('ALL')" id="catfilter-ALL" class="cat-filter-btn pill-active px-3.5 py-1.5 rounded-full text-xs font-bold transition shrink-0">
+              Todas as Categorias
+            </button>
+            <button onclick="setCategoryListFilter('FII')" id="catfilter-FII" class="cat-filter-btn px-3.5 py-1.5 rounded-full bg-slate-800 text-slate-300 text-xs font-semibold transition shrink-0">
+              🏢 FIIs
+            </button>
+            <button onclick="setCategoryListFilter('ACAO_BR')" id="catfilter-ACAO_BR" class="cat-filter-btn px-3.5 py-1.5 rounded-full bg-slate-800 text-slate-300 text-xs font-semibold transition shrink-0">
+              🇧🇷 Ações B3
+            </button>
+            <button onclick="setCategoryListFilter('CAIXINHA')" id="catfilter-CAIXINHA" class="cat-filter-btn px-3.5 py-1.5 rounded-full bg-slate-800 text-slate-300 text-xs font-semibold transition shrink-0">
+              💜 Caixinhas (Nubank/CDI)
+            </button>
+            <button onclick="setCategoryListFilter('RENDA_FIXA')" id="catfilter-RENDA_FIXA" class="cat-filter-btn px-3.5 py-1.5 rounded-full bg-slate-800 text-slate-300 text-xs font-semibold transition shrink-0">
+              🏦 CDB / LCI / LCA / IPCA+
+            </button>
+            <button onclick="setCategoryListFilter('TESOURO')" id="catfilter-TESOURO" class="cat-filter-btn px-3.5 py-1.5 rounded-full bg-slate-800 text-slate-300 text-xs font-semibold transition shrink-0">
+              🏛️ Tesouro Direto
+            </button>
+            <button onclick="setCategoryListFilter('OUTROS')" id="catfilter-OUTROS" class="cat-filter-btn px-3.5 py-1.5 rounded-full bg-slate-800 text-slate-300 text-xs font-semibold transition shrink-0">
+              🌎 ETFs / Fundos / Cripto / EUA
             </button>
           </div>
+          <button onclick="openAddInvestmentModal()" class="px-3.5 py-1.5 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold text-xs shrink-0">
+            + Novo Investimento
+          </button>
         </div>
-        <div class="overflow-x-auto">
-          <table class="w-full text-left border-collapse text-xs sm:text-sm">
-            <thead>
-              <tr class="border-b border-slate-800 text-slate-400 text-[11px] uppercase">
-                <th class="py-2.5 px-3">Ativo</th>
-                <th class="py-2.5 px-3">Classe</th>
-                <th class="py-2.5 px-3 text-right">Qtd</th>
-                <th class="py-2.5 px-3 text-right">Preço Médio</th>
-                <th class="py-2.5 px-3 text-right">Preço Atual</th>
-                <th class="py-2.5 px-3 text-right">Var. Dia</th>
-                <th class="py-2.5 px-3 text-right">Últ. Div/Cota</th>
-                <th class="py-2.5 px-3 text-right">Saldo Atual (R$)</th>
-                <th class="py-2.5 px-3 text-right">Lucro / Prej.</th>
-                <th class="py-2.5 px-3 text-center">Raio-X</th>
-              </tr>
-            </thead>
-            <tbody id="portfolio-positions-tbody" class="divide-y divide-slate-800/60"></tbody>
-          </table>
-        </div>
+
+        <!-- Container onde as categorias e seus respectivos ativos são renderizados -->
+        <div id="categorized-investments-container" class="space-y-6"></div>
       </div>
     </section>
 
@@ -521,116 +596,199 @@
     </button>
   </div>
 
-  <!-- MODAL 1: NOVA ORDEM (COMPRA / VENDA) -->
+  <!-- MODAL 1: ADICIONAR AÇÕES / FIIs / ETFs / STOCKS / CRIPTO NA CARTEIRA -->
   <div id="modal-transaction" class="fixed inset-0 bg-black/75 hidden items-center justify-center z-50 p-4">
-    <div class="bg-[#111827] border border-slate-700 rounded-2xl max-w-md w-full p-5 space-y-4">
+    <div class="bg-[#111827] border border-slate-700 rounded-2xl max-w-lg w-full p-5 space-y-4 max-h-[92vh] overflow-y-auto">
       <div class="flex items-center justify-between">
-        <h3 class="font-bold text-base text-white">Lançar Operação (Compra / Venda)</h3>
+        <div>
+          <h3 class="font-bold text-base text-white">Adicionar à Minha Carteira (FIIs, Ações, ETFs, Cripto)</h3>
+          <p class="text-[11px] text-slate-400">Informe o fundo ou ação que você comprou</p>
+        </div>
         <button onclick="closeModal('modal-transaction')" class="text-slate-400 hover:text-white text-lg">✕</button>
       </div>
+
+      <!-- Alternador rápido caso queira ir para Renda Fixa / Caixinha -->
+      <div class="flex items-center justify-between p-2 rounded-xl bg-slate-900 border border-slate-800 text-xs">
+        <span class="text-slate-300 font-medium">Quer adicionar Caixinha Nubank, CDB, LCI ou Tesouro IPCA+?</span>
+        <button onclick="closeModal('modal-transaction'); openFixedIncomeModal();" class="px-2.5 py-1 rounded-lg bg-purple-500/20 hover:bg-purple-500/30 text-purple-300 font-bold border border-purple-500/30 shrink-0">
+          Ir para Renda Fixa →
+        </button>
+      </div>
+
+      <!-- Sugestões Rápidas de Tickers -->
+      <div class="space-y-1.5">
+        <span class="text-[11px] text-slate-400 font-semibold block">Atalhos rápidos (clique para preencher):</span>
+        <div class="flex flex-wrap gap-1.5">
+          <button type="button" onclick="quickPickTicker('MXRF11','FII')" class="px-2 py-1 rounded bg-blue-500/15 hover:bg-blue-500/25 text-blue-300 border border-blue-500/30 text-[11px] font-bold">🏢 MXRF11</button>
+          <button type="button" onclick="quickPickTicker('HGLG11','FII')" class="px-2 py-1 rounded bg-blue-500/15 hover:bg-blue-500/25 text-blue-300 border border-blue-500/30 text-[11px] font-bold">🏢 HGLG11</button>
+          <button type="button" onclick="quickPickTicker('XPML11','FII')" class="px-2 py-1 rounded bg-blue-500/15 hover:bg-blue-500/25 text-blue-300 border border-blue-500/30 text-[11px] font-bold">🏢 XPML11</button>
+          <button type="button" onclick="quickPickTicker('KNCR11','FII')" class="px-2 py-1 rounded bg-blue-500/15 hover:bg-blue-500/25 text-blue-300 border border-blue-500/30 text-[11px] font-bold">🏢 KNCR11</button>
+          <button type="button" onclick="quickPickTicker('BTLG11','FII')" class="px-2 py-1 rounded bg-blue-500/15 hover:bg-blue-500/25 text-blue-300 border border-blue-500/30 text-[11px] font-bold">🏢 BTLG11</button>
+          <button type="button" onclick="quickPickTicker('PETR4','ACAO_BR')" class="px-2 py-1 rounded bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-300 border border-emerald-500/30 text-[11px] font-bold">🇧🇷 PETR4</button>
+          <button type="button" onclick="quickPickTicker('BBAS3','ACAO_BR')" class="px-2 py-1 rounded bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-300 border border-emerald-500/30 text-[11px] font-bold">🇧🇷 BBAS3</button>
+          <button type="button" onclick="quickPickTicker('VALE3','ACAO_BR')" class="px-2 py-1 rounded bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-300 border border-emerald-500/30 text-[11px] font-bold">🇧🇷 VALE3</button>
+          <button type="button" onclick="quickPickTicker('WEGE3','ACAO_BR')" class="px-2 py-1 rounded bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-300 border border-emerald-500/30 text-[11px] font-bold">🇧🇷 WEGE3</button>
+          <button type="button" onclick="quickPickTicker('ITUB4','ACAO_BR')" class="px-2 py-1 rounded bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-300 border border-emerald-500/30 text-[11px] font-bold">🇧🇷 ITUB4</button>
+        </div>
+      </div>
+
       <div class="grid grid-cols-2 gap-3 text-xs">
         <div>
-          <label class="text-slate-400 block mb-1">Tipo de Ordem</label>
-          <select id="tx-type" class="w-full px-3 py-2 rounded-lg bg-slate-900 border border-slate-700 text-white font-semibold">
-            <option value="BUY">Compra (+)</option>
-            <option value="SELL">Venda (-)</option>
-          </select>
-        </div>
-        <div>
-          <label class="text-slate-400 block mb-1">Classe do Ativo</label>
+          <label class="text-slate-400 block mb-1">Categoria do Ativo</label>
           <select id="tx-class" onchange="updateTxCurrency()" class="w-full px-3 py-2 rounded-lg bg-slate-900 border border-slate-700 text-white font-semibold">
-            <option value="ACAO_BR">Ação B3 (Brasil)</option>
-            <option value="FII">FII (Fundo Imobiliário)</option>
-            <option value="ETF_BR">ETF B3</option>
-            <option value="STOCK_US">Stock EUA (USD)</option>
-            <option value="CRIPTO">Criptomoeda (USD)</option>
+            <option value="FII">🏢 Fundo Imobiliário (FII / Fiagro)</option>
+            <option value="ACAO_BR">🇧🇷 Ação Brasileira (B3)</option>
+            <option value="ETF_BR">🌎 ETF listado na B3</option>
+            <option value="FUNDO_INV">📈 Fundo de Investimento (Cotas)</option>
+            <option value="STOCK_US">🇺🇸 Stock / REIT EUA (USD)</option>
+            <option value="CRIPTO">₿ Criptomoeda (USD)</option>
           </select>
         </div>
         <div>
-          <label class="text-slate-400 block mb-1">Ticker / Código</label>
-          <input type="text" id="tx-ticker" placeholder="Ex: PETR4, MXRF11, BTC" class="w-full px-3 py-2 rounded-lg bg-slate-900 border border-slate-700 text-white uppercase font-bold" />
+          <label class="text-slate-400 block mb-1">Operação</label>
+          <select id="tx-type" class="w-full px-3 py-2 rounded-lg bg-slate-900 border border-slate-700 text-white font-semibold">
+            <option value="BUY">Adicionar / Compra (+)</option>
+            <option value="SELL">Reduzir / Venda (-)</option>
+          </select>
+        </div>
+        <div class="col-span-2">
+          <label class="text-slate-400 block mb-1">Código do Ativo (Ticker na B3 ou Nome do Fundo)</label>
+          <div class="flex gap-2">
+            <input type="text" id="tx-ticker" onblur="lookupTickerPrice()" placeholder="Ex: MXRF11, GARE11, PETR4, BTC" class="flex-1 px-3 py-2 rounded-lg bg-slate-900 border border-slate-700 text-white uppercase font-bold" />
+            <button type="button" onclick="lookupTickerPrice()" id="btn-lookup-ticker" class="px-3 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-emerald-400 font-bold border border-slate-700 shrink-0">
+              🔍 Buscar Preço Atual
+            </button>
+          </div>
+          <span id="tx-lookup-feedback" class="text-[11px] text-emerald-400 mt-1 block"></span>
         </div>
         <div>
-          <label class="text-slate-400 block mb-1">Data</label>
+          <label class="text-slate-400 block mb-1">Quantidade de Cotas / Ações</label>
+          <input type="number" id="tx-qty" step="any" oninput="updateTxTotalPreview()" placeholder="Ex: 100" class="w-full px-3 py-2 rounded-lg bg-slate-900 border border-slate-700 text-white font-bold" />
+        </div>
+        <div>
+          <label class="text-slate-400 block mb-1">Preço Pago por Cota / Preço Médio</label>
+          <input type="number" id="tx-price" step="any" oninput="updateTxTotalPreview()" placeholder="Ex: 9.95" class="w-full px-3 py-2 rounded-lg bg-slate-900 border border-slate-700 text-white font-bold" />
+        </div>
+        <div>
+          <label class="text-slate-400 block mb-1">Data da Compra</label>
           <input type="date" id="tx-date" class="w-full px-3 py-2 rounded-lg bg-slate-900 border border-slate-700 text-white" />
         </div>
         <div>
-          <label class="text-slate-400 block mb-1">Quantidade</label>
-          <input type="number" id="tx-qty" step="any" placeholder="100" class="w-full px-3 py-2 rounded-lg bg-slate-900 border border-slate-700 text-white font-semibold" />
+          <label class="text-slate-400 block mb-1">Corretora / Banco</label>
+          <input type="text" id="tx-broker" value="Nubank / XP" class="w-full px-3 py-2 rounded-lg bg-slate-900 border border-slate-700 text-white" />
         </div>
-        <div>
-          <label class="text-slate-400 block mb-1">Preço Unitário</label>
-          <input type="number" id="tx-price" step="any" placeholder="35.50" class="w-full px-3 py-2 rounded-lg bg-slate-900 border border-slate-700 text-white font-semibold" />
-        </div>
-        <div>
-          <label class="text-slate-400 block mb-1">Moeda</label>
-          <select id="tx-currency" class="w-full px-3 py-2 rounded-lg bg-slate-900 border border-slate-700 text-white">
-            <option value="BRL">BRL (R$)</option>
-            <option value="USD">USD (US$)</option>
+        <div class="col-span-2 hidden">
+          <select id="tx-currency">
+            <option value="BRL">BRL</option>
+            <option value="USD">USD</option>
           </select>
         </div>
-        <div>
-          <label class="text-slate-400 block mb-1">Corretora</label>
-          <input type="text" id="tx-broker" value="XP Investimentos" class="w-full px-3 py-2 rounded-lg bg-slate-900 border border-slate-700 text-white" />
-        </div>
       </div>
-      <div class="flex justify-end gap-2 pt-2">
+
+      <!-- Resumo do Valor Total da Compra -->
+      <div class="p-3 rounded-xl bg-emerald-950/25 border border-emerald-500/30 flex items-center justify-between text-xs">
+        <span class="text-slate-300">Valor Total Investido nesta Posição:</span>
+        <strong id="tx-total-preview" class="text-base font-black text-emerald-400">R$ 0,00</strong>
+      </div>
+
+      <div class="flex justify-end gap-2 pt-1">
         <button onclick="closeModal('modal-transaction')" class="px-4 py-2 rounded-lg bg-slate-800 text-slate-300 text-xs font-semibold">Cancelar</button>
-        <button onclick="submitTransaction()" class="px-4 py-2 rounded-lg bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold text-xs">Salvar Operação</button>
+        <button onclick="submitTransaction()" class="px-5 py-2 rounded-lg bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold text-xs shadow-lg">Salvar na Minha Carteira</button>
       </div>
     </div>
   </div>
 
-  <!-- MODAL 2: NOVO TÍTULO DE RENDA FIXA -->
+  <!-- MODAL 2: ADICIONAR RENDA FIXA / CAIXINHA NUBANK / CDB / LCI / TESOURO IPCA+ -->
   <div id="modal-fixed-income" class="fixed inset-0 bg-black/75 hidden items-center justify-center z-50 p-4">
-    <div class="bg-[#111827] border border-slate-700 rounded-2xl max-w-md w-full p-5 space-y-4">
+    <div class="bg-[#111827] border border-slate-700 rounded-2xl max-w-lg w-full p-5 space-y-4 max-h-[92vh] overflow-y-auto">
       <div class="flex items-center justify-between">
-        <h3 class="font-bold text-base text-white">Adicionar Renda Fixa / Tesouro / Caixinha</h3>
+        <div>
+          <h3 class="font-bold text-base text-white">Adicionar Caixinha, CDB, LCI/LCA ou Tesouro IPCA+</h3>
+          <p class="text-[11px] text-slate-400">Cálculo diário automático pelo CDI, Selic ou IPCA oficial do Banco Central</p>
+        </div>
         <button onclick="closeModal('modal-fixed-income')" class="text-slate-400 hover:text-white text-lg">✕</button>
       </div>
+
+      <!-- Modelos Rápidos em 1 Clique -->
+      <div class="space-y-1.5">
+        <span class="text-[11px] text-slate-400 font-semibold block">Escolha um modelo rápido (preenche automaticamente):</span>
+        <div class="flex flex-wrap gap-1.5">
+          <button type="button" onclick="applyFixedIncomePreset('CAIXINHA_NUBANK')" class="px-2.5 py-1.5 rounded-lg bg-purple-500/20 hover:bg-purple-500/30 text-purple-300 border border-purple-500/40 text-xs font-bold">
+            💜 Caixinha Nubank (100% CDI)
+          </button>
+          <button type="button" onclick="applyFixedIncomePreset('CAIXINHA_TURBO')" class="px-2.5 py-1.5 rounded-lg bg-purple-500/15 hover:bg-purple-500/25 text-purple-200 border border-purple-500/30 text-xs font-semibold">
+            💜 Caixinha / Cofrinho (110% CDI)
+          </button>
+          <button type="button" onclick="applyFixedIncomePreset('CDB_CDI')" class="px-2.5 py-1.5 rounded-lg bg-indigo-500/20 hover:bg-indigo-500/30 text-indigo-300 border border-indigo-500/40 text-xs font-bold">
+            🏦 CDB Pós-Fixado (% CDI)
+          </button>
+          <button type="button" onclick="applyFixedIncomePreset('CDB_IPCA')" class="px-2.5 py-1.5 rounded-lg bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/40 text-xs font-bold">
+            📈 CDB / Título IPCA+
+          </button>
+          <button type="button" onclick="applyFixedIncomePreset('LCI_LCA')" class="px-2.5 py-1.5 rounded-lg bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 border border-emerald-500/40 text-xs font-bold">
+            🌾 LCI / LCA (Isento IR)
+          </button>
+          <button type="button" onclick="applyFixedIncomePreset('TESOURO_IPCA')" class="px-2.5 py-1.5 rounded-lg bg-cyan-500/20 hover:bg-cyan-500/30 text-cyan-300 border border-cyan-500/40 text-xs font-bold">
+            🏛️ Tesouro IPCA+
+          </button>
+          <button type="button" onclick="applyFixedIncomePreset('TESOURO_SELIC')" class="px-2.5 py-1.5 rounded-lg bg-cyan-500/15 hover:bg-cyan-500/25 text-cyan-200 border border-cyan-500/30 text-xs font-semibold">
+            🏛️ Tesouro Selic
+          </button>
+        </div>
+      </div>
+
       <div class="grid grid-cols-2 gap-3 text-xs">
-        <div class="col-span-2">
-          <label class="text-slate-400 block mb-1">Nome do Título / Caixinha</label>
-          <input type="text" id="fi-name" placeholder="Ex: CDB Liquidez Diária 110% CDI" class="w-full px-3 py-2 rounded-lg bg-slate-900 border border-slate-700 text-white font-semibold" />
-        </div>
         <div>
-          <label class="text-slate-400 block mb-1">Emissor / Banco</label>
-          <input type="text" id="fi-issuer" value="Nubank / BTG" class="w-full px-3 py-2 rounded-lg bg-slate-900 border border-slate-700 text-white" />
-        </div>
-        <div>
-          <label class="text-slate-400 block mb-1">Indexador</label>
-          <select id="fi-indexer" class="w-full px-3 py-2 rounded-lg bg-slate-900 border border-slate-700 text-white font-semibold">
-            <option value="CDI">% do CDI</option>
-            <option value="IPCA">IPCA + (% a.a.)</option>
-            <option value="SELIC">Taxa Selic</option>
-            <option value="PRE">Prefixado (% a.a.)</option>
+          <label class="text-slate-400 block mb-1">Categoria na Carteira</label>
+          <select id="fi-category" class="w-full px-3 py-2 rounded-lg bg-slate-900 border border-slate-700 text-white font-semibold">
+            <option value="CAIXINHA">💜 Caixinha / Reserva de Liquidez</option>
+            <option value="RENDA_FIXA">🏦 CDB / LCI / LCA / Debênture</option>
+            <option value="TESOURO">🏛️ Tesouro Direto (IPCA+ / Selic / Pré)</option>
+            <option value="FUNDO_INV">📈 Fundo de Renda Fixa / DI</option>
           </select>
         </div>
         <div>
-          <label class="text-slate-400 block mb-1">Taxa (Ex: 100 p/ 100% CDI)</label>
+          <label class="text-slate-400 block mb-1">Banco / Instituição</label>
+          <input type="text" id="fi-issuer" value="Nubank" placeholder="Ex: Nubank, Inter, BTG, XP" class="w-full px-3 py-2 rounded-lg bg-slate-900 border border-slate-700 text-white font-semibold" />
+        </div>
+        <div class="col-span-2">
+          <label class="text-slate-400 block mb-1">Nome do Investimento</label>
+          <input type="text" id="fi-name" placeholder="Ex: Caixinha Reserva de Emergência, CDB 110% CDI, Tesouro IPCA+ 2029" class="w-full px-3 py-2 rounded-lg bg-slate-900 border border-slate-700 text-white font-bold" />
+        </div>
+        <div>
+          <label class="text-slate-400 block mb-1">Indexador de Rendimento</label>
+          <select id="fi-indexer" onchange="updateFiIndexerHint()" class="w-full px-3 py-2 rounded-lg bg-slate-900 border border-slate-700 text-white font-semibold">
+            <option value="CDI">% do CDI (Caixinhas, CDB, LCI)</option>
+            <option value="IPCA">IPCA + Taxa Fixa (% a.a.)</option>
+            <option value="SELIC">Taxa Selic (Tesouro Selic)</option>
+            <option value="PRE">Prefixado (% ao ano)</option>
+          </select>
+        </div>
+        <div>
+          <label id="fi-rate-label" class="text-slate-400 block mb-1">Taxa (% do CDI — ex: 100)</label>
           <input type="number" id="fi-rate" value="100" step="any" class="w-full px-3 py-2 rounded-lg bg-slate-900 border border-slate-700 text-white font-bold" />
         </div>
         <div>
-          <label class="text-slate-400 block mb-1">Valor Aplicado (R$)</label>
-          <input type="number" id="fi-amount" placeholder="5000" step="any" class="w-full px-3 py-2 rounded-lg bg-slate-900 border border-slate-700 text-white font-bold" />
+          <label class="text-slate-400 block mb-1">Valor Aplicado / Saldo (R$)</label>
+          <input type="number" id="fi-amount" placeholder="Ex: 5000.00" step="any" class="w-full px-3 py-2 rounded-lg bg-slate-900 border border-slate-700 text-white font-bold text-sm" />
         </div>
         <div>
-          <label class="text-slate-400 block mb-1">Data Aplicação</label>
+          <label class="text-slate-400 block mb-1">Data da Aplicação</label>
           <input type="date" id="fi-start" class="w-full px-3 py-2 rounded-lg bg-slate-900 border border-slate-700 text-white" />
         </div>
         <div>
-          <label class="text-slate-400 block mb-1">Vencimento</label>
+          <label class="text-slate-400 block mb-1">Vencimento (Opcional p/ Caixinha)</label>
           <input type="date" id="fi-maturity" class="w-full px-3 py-2 rounded-lg bg-slate-900 border border-slate-700 text-white" />
         </div>
-        <div class="col-span-2 flex items-center gap-4 pt-1">
-          <label class="flex items-center gap-2 text-slate-300 cursor-pointer">
-            <input type="checkbox" id="fi-exempt" class="rounded" /> Isento de IR (LCI / LCA / CRI / CRA)
+        <div class="flex items-center pt-5">
+          <label class="flex items-center gap-2 text-slate-200 cursor-pointer font-medium">
+            <input type="checkbox" id="fi-exempt" class="rounded w-4 h-4 accent-emerald-500" /> Isento de IR (LCI / LCA / CRI / CRA)
           </label>
         </div>
       </div>
       <div class="flex justify-end gap-2 pt-2">
         <button onclick="closeModal('modal-fixed-income')" class="px-4 py-2 rounded-lg bg-slate-800 text-slate-300 text-xs font-semibold">Cancelar</button>
-        <button onclick="submitFixedIncome()" class="px-4 py-2 rounded-lg bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold text-xs">Salvar Título</button>
+        <button onclick="submitFixedIncome()" class="px-5 py-2 rounded-lg bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold text-xs shadow-lg">Salvar na Minha Carteira</button>
       </div>
     </div>
   </div>

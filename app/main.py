@@ -14,6 +14,7 @@ from .market_service import (
     get_asset_chart_and_dividends,
     fetch_macro_indicators,
     sync_yfinance_quotes_background,
+    lookup_ticker_live,
 )
 from .intelligence_service import (
     fetch_asset_news,
@@ -168,16 +169,24 @@ def api_analyze_asset_report(ticker: str):
     return {"status": "ok", "ai_interpretation": summary}
 
 
+@app.get("/api/lookup-ticker")
+def api_lookup_ticker(ticker: str = Query(...), asset_class: str = Query("ACAO_BR")):
+    info = lookup_ticker_live(ticker, asset_class)
+    return info
+
+
 @app.post("/api/transactions")
 def api_add_transaction(payload: TransactionCreate):
-    ticker = payload.ticker.upper().strip()
+    ticker = payload.ticker.upper().strip().replace(".SA", "")
     macro = fetch_macro_indicators()
     fx = float(macro.get("usd_brl", 5.72)) if payload.currency.upper() == "USD" else 1.0
+
+    # Try live lookup first so new tickers get real market price & dividend data
+    live_info = lookup_ticker_live(ticker, payload.asset_class.upper())
 
     conn = get_conn()
     cur = conn.cursor()
 
-    # Ensure ticker exists in assets_catalog
     exists = cur.execute("SELECT ticker FROM assets_catalog WHERE ticker = ?", (ticker,)).fetchone()
     if not exists:
         cur.execute("""
@@ -187,17 +196,17 @@ def api_add_transaction(payload: TransactionCreate):
             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """, (
             ticker,
-            ticker,
+            live_info.get("name") or ticker,
             payload.asset_class.upper(),
             payload.currency.upper(),
-            "Personalizado",
-            payload.unit_price,
-            0.0,
+            live_info.get("sector") or "Personalizado",
+            live_info.get("last_price") if live_info.get("last_price", 0) > 0 else payload.unit_price,
+            live_info.get("change_pct", 0.0),
             1000000,
-            0.0,
+            live_info.get("dy_12m", 0.0),
             0.0,
             1.0,
-            0.0,
+            live_info.get("last_dividend_per_share", 0.0),
             datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
         ))
 
@@ -217,6 +226,27 @@ def api_add_transaction(payload: TransactionCreate):
         payload.broker,
         payload.notes,
     ))
+    conn.commit()
+    conn.close()
+    return {"status": "ok"}
+
+
+@app.delete("/api/portfolio/position/{ticker}")
+def api_delete_position_by_ticker(ticker: str):
+    t = ticker.upper().strip()
+    conn = get_conn()
+    conn.execute("DELETE FROM transactions WHERE UPPER(ticker) = ?", (t,))
+    conn.commit()
+    conn.close()
+    return {"status": "ok"}
+
+
+@app.post("/api/portfolio/clear")
+def api_clear_portfolio():
+    conn = get_conn()
+    conn.execute("DELETE FROM transactions")
+    conn.execute("DELETE FROM fixed_income")
+    conn.execute("DELETE FROM dividends_received")
     conn.commit()
     conn.close()
     return {"status": "ok"}
