@@ -1244,13 +1244,39 @@ function renderAiReportSection(repData) {
     const bullsHtml = (ai.bullish_points || []).map(b => `<li class="flex items-start gap-2"><span class="text-emerald-400 font-bold">✓</span><span>${b}</span></li>`).join("");
     const bearsHtml = (ai.bearish_risks || []).map(r => `<li class="flex items-start gap-2"><span class="text-amber-400 font-bold">⚠️</span><span>${r}</span></li>`).join("");
 
+    const pdfPagesBadge = ai.pdf_pages_read && ai.pdf_pages_read > 0
+      ? `<span class="px-2 py-0.5 rounded-md text-[10px] font-bold bg-blue-500/20 text-blue-300 border border-blue-500/30">✅ PDF Real Extraído (${ai.pdf_pages_read} págs via PyMuPDF)</span>`
+      : `<span class="px-2 py-0.5 rounded-md text-[10px] font-bold bg-slate-800 text-slate-300">Sincronizado B3 / CVM</span>`;
+
+    const excerptsHtml = ai.pdf_excerpts && ai.pdf_excerpts.length > 0
+      ? `
+        <div class="p-3 rounded-xl bg-slate-950/90 border border-slate-800 space-y-1.5 text-xs">
+          <div class="font-bold text-blue-400 text-[11px] uppercase flex items-center justify-between">
+            <span>📑 Trechos Extraídos Diretamente do PDF Oficial (${ai.document_source || "B3/CVM"})</span>
+            ${ai.pdf_url ? `<a href="${ai.pdf_url}" target="_blank" rel="noopener" class="text-emerald-400 hover:underline">Baixar PDF Analisado ⬇</a>` : ""}
+          </div>
+          <ul class="space-y-1 text-slate-300 italic text-[11px] leading-relaxed">
+            ${ai.pdf_excerpts.map(ex => `<li>"…${ex}…"</li>`).join("")}
+          </ul>
+        </div>
+      `
+      : "";
+
     aiBox.innerHTML = `
       <div class="p-4 rounded-xl bg-slate-900/95 border border-emerald-500/30 space-y-3">
         <div class="flex flex-wrap items-center justify-between gap-2">
-          <span class="text-xs font-bold text-emerald-400 uppercase tracking-wide">📄 ${ai.analyzed_document || "Relatório Oficial"}</span>
+          <div class="space-y-1">
+            <span class="text-xs font-bold text-emerald-400 uppercase tracking-wide block">📄 ${ai.analyzed_document || "Relatório Oficial"}</span>
+            <div class="flex flex-wrap items-center gap-2 text-[11px] text-slate-400">
+              <span>Fonte: <strong class="text-slate-200">${repData.official_portal || ai.document_source || "B3 / CVM"}</strong></span>
+              ${ai.document_date ? `<span>· Publicado em: <strong class="text-slate-200">${ai.document_date}</strong></span>` : ""}
+              ${pdfPagesBadge}
+            </div>
+          </div>
           <span class="px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">${ai.verdict_badge || "ANÁLISE CONCLUÍDA"}</span>
         </div>
         <p class="text-xs sm:text-sm text-slate-200 leading-relaxed">${ai.executive_summary}</p>
+        ${excerptsHtml}
         <div class="grid grid-cols-2 sm:grid-cols-4 gap-2">${metricsHtml}</div>
         <div class="grid grid-cols-1 md:grid-cols-2 gap-3 pt-2 text-xs">
           <div class="p-3 rounded-xl bg-emerald-950/20 border border-emerald-500/20">
@@ -1269,15 +1295,23 @@ function renderAiReportSection(repData) {
     `;
   }
 
-  docsList.innerHTML = (repData.reports || []).map(d => `
-    <a href="${d.url}" target="_blank" rel="noopener" class="flex items-center justify-between p-3 rounded-xl bg-slate-900/80 hover:bg-slate-800 border border-slate-800 transition text-xs">
-      <div>
-        <div class="font-bold text-slate-200">${d.title}</div>
-        <div class="text-[11px] text-slate-400">${d.source} · Data: ${d.date} (${d.reference})</div>
+  docsList.innerHTML = (repData.reports || []).map(d => {
+    const dlBtn = d.download_url
+      ? `<a href="${d.download_url}" target="_blank" rel="noopener" class="px-2.5 py-1 rounded-lg bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 border border-emerald-500/30 font-bold">Baixar PDF ⬇</a>`
+      : "";
+    return `
+      <div class="flex flex-wrap items-center justify-between gap-2 p-3 rounded-xl bg-slate-900/80 hover:bg-slate-800/90 border border-slate-800 transition text-xs">
+        <div>
+          <div class="font-bold text-slate-100">${d.title}</div>
+          <div class="text-[11px] text-slate-400">${d.source} · Entrega: <strong class="text-slate-300">${d.date}</strong> ${d.reference ? "(Ref: " + d.reference + ")" : ""}</div>
+        </div>
+        <div class="flex items-center gap-2 shrink-0">
+          ${dlBtn}
+          <a href="${d.url}" target="_blank" rel="noopener" class="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold border border-slate-700">Visualizar ↗</a>
+        </div>
       </div>
-      <span class="px-2.5 py-1 rounded-lg bg-slate-800 text-emerald-400 font-bold shrink-0">Abrir Documento ↗</span>
-    </a>
-  `).join("");
+    `;
+  }).join("");
 }
 
 async function reanalyzeAssetReport() {
