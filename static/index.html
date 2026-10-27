@@ -8,7 +8,9 @@
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   <title>SIM — Scherer Investments Money</title>
   <link rel="manifest" href="/manifest.json" />
-  <link rel="icon" type="image/svg+xml" href="/static/icon.svg" />
+  <link rel="icon" type="image/x-icon" href="/static/icon.ico" />
+  <link rel="icon" type="image/png" sizes="512x512" href="/static/logo.png" />
+  <link rel="apple-touch-icon" href="/static/logo.png" />
   <script src="https://cdn.tailwindcss.com"></script>
   <script>
     tailwind.config = {
@@ -76,9 +78,7 @@
       <div class="flex flex-wrap items-center justify-between gap-3 pb-3">
         <!-- Brand -->
         <div class="flex items-center gap-3 cursor-pointer" onclick="switchMainTab('DASHBOARD')">
-          <div class="w-10 h-10 rounded-xl bg-emerald-500/15 border border-emerald-500/40 flex items-center justify-center shadow-lg shadow-emerald-950/50">
-            <span class="text-emerald-400 font-black text-lg tracking-wider">SIM</span>
-          </div>
+          <img src="/static/logo.png" alt="SIM Logo" class="w-11 h-11 rounded-xl shadow-lg shadow-emerald-950/60 border border-emerald-500/30 object-cover" />
           <div>
             <h1 class="font-bold text-base sm:text-lg leading-tight text-white flex items-center gap-2">
               Scherer Investments Money

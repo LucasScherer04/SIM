@@ -339,6 +339,11 @@ def get_manifest():
     return FileResponse(os.path.join(STATIC_DIR, "manifest.json"))
 
 
+@app.get("/favicon.ico")
+def get_favicon():
+    return FileResponse(os.path.join(STATIC_DIR, "icon.ico"))
+
+
 @app.get("/sw.js")
 def get_sw():
     return FileResponse(os.path.join(STATIC_DIR, "sw.js"))
