@@ -1,0 +1,18 @@
+{
+  "name": "SIM — Scherer Investments Money",
+  "short_name": "SIM Invest",
+  "description": "Controle de Investimentos, FIIs, Ações, Renda Fixa e Mercado Ao Vivo",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#090d16",
+  "theme_color": "#10b981",
+  "orientation": "portrait-primary",
+  "icons": [
+    {
+      "src": "/static/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}

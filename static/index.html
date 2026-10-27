@@ -1,0 +1,694 @@
+<!DOCTYPE html>
+<html lang="pt-BR" class="dark">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <meta name="theme-color" content="#090d16" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <title>SIM — Scherer Investments Money</title>
+  <link rel="manifest" href="/manifest.json" />
+  <link rel="icon" type="image/svg+xml" href="/static/icon.svg" />
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          colors: {
+            simbg: '#090d16',
+            simcard: '#111827',
+            simborder: '#1f2937',
+            simaccent: '#10b981',
+          }
+        }
+      }
+    }
+  </script>
+  <style>
+    body {
+      background-color: #090d16;
+      color: #f8fafc;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Inter, sans-serif;
+      overflow-x: hidden;
+    }
+    ::-webkit-scrollbar { width: 6px; height: 6px; }
+    ::-webkit-scrollbar-track { background: #090d16; }
+    ::-webkit-scrollbar-thumb { background: #1e293b; border-radius: 3px; }
+    ::-webkit-scrollbar-thumb:hover { background: #334155; }
+    .no-scrollbar::-webkit-scrollbar { display: none; }
+    .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+    .glass-card {
+      background: rgba(17, 24, 39, 0.86);
+      backdrop-filter: blur(12px);
+      border: 1px solid rgba(255, 255, 255, 0.07);
+    }
+    .tab-active {
+      background: linear-gradient(135deg, rgba(16, 185, 129, 0.18), rgba(5, 150, 105, 0.08));
+      border-color: #10b981 !important;
+      color: #34d399 !important;
+    }
+    .pill-active {
+      background-color: #10b981 !important;
+      color: #052e16 !important;
+      font-weight: 700;
+    }
+  </style>
+</head>
+<body class="min-h-screen flex flex-col pb-20 md:pb-0">
+
+  <!-- 1. TOP LIVE MACRO TICKER TAPE -->
+  <div class="w-full bg-[#060911] border-b border-slate-800/80 px-3 py-2 text-xs flex items-center justify-between overflow-x-auto no-scrollbar whitespace-nowrap gap-6 sticky top-0 z-40">
+    <div class="flex items-center gap-5" id="macro-ticker-bar">
+      <span class="text-slate-400">Carregando indicadores ao vivo...</span>
+    </div>
+    <div class="flex items-center gap-2 shrink-0">
+      <span id="last-sync-badge" class="text-[11px] text-slate-400 hidden sm:inline">Ao Vivo</span>
+      <button onclick="refreshAll()" class="px-2.5 py-1 rounded-md bg-slate-800 hover:bg-slate-700 text-emerald-400 font-medium transition flex items-center gap-1">
+        <span>↻</span> <span class="hidden sm:inline">Atualizar</span>
+      </button>
+    </div>
+  </div>
+
+  <!-- 2. HEADER & ASSET CLASS NAVIGATION TABS -->
+  <header class="bg-[#0d1321]/95 border-b border-slate-800/80 px-4 lg:px-8 pt-3 pb-0 sticky top-[37px] z-30 backdrop-blur-md">
+    <div class="max-w-7xl mx-auto">
+      <div class="flex flex-wrap items-center justify-between gap-3 pb-3">
+        <!-- Brand -->
+        <div class="flex items-center gap-3 cursor-pointer" onclick="switchMainTab('DASHBOARD')">
+          <div class="w-10 h-10 rounded-xl bg-emerald-500/15 border border-emerald-500/40 flex items-center justify-center shadow-lg shadow-emerald-950/50">
+            <span class="text-emerald-400 font-black text-lg tracking-wider">SIM</span>
+          </div>
+          <div>
+            <h1 class="font-bold text-base sm:text-lg leading-tight text-white flex items-center gap-2">
+              Scherer Investments Money
+              <span class="text-[10px] font-semibold uppercase tracking-wider px-2 py-0.5 rounded-full bg-emerald-500/15 text-emerald-400 border border-emerald-500/30">Live B3 & Global</span>
+            </h1>
+            <p class="text-xs text-slate-400 hidden sm:block">Gestão de Patrimônio, Ações, FIIs, Renda Fixa e Inteligência de Mercado</p>
+          </div>
+        </div>
+
+        <!-- Action Buttons -->
+        <div class="flex items-center gap-2">
+          <button onclick="togglePrivacy()" id="btn-privacy" title="Modo Privacidade (Ocultar Valores)" class="p-2 rounded-lg bg-slate-800/90 hover:bg-slate-700 text-slate-300 border border-slate-700/70 text-xs font-medium">
+            👁️
+          </button>
+          <button onclick="openMobileModal()" class="px-3 py-2 rounded-lg bg-slate-800/90 hover:bg-slate-700 text-slate-200 border border-slate-700/70 text-xs font-semibold flex items-center gap-1.5">
+            <span>📱</span> <span class="hidden sm:inline">App Celular</span>
+          </button>
+          <button onclick="openFixedIncomeModal()" class="px-3 py-2 rounded-lg bg-indigo-500/15 hover:bg-indigo-500/25 text-indigo-300 border border-indigo-500/30 text-xs font-semibold hidden sm:flex items-center gap-1">
+            <span>+ Renda Fixa</span>
+          </button>
+          <button onclick="openTransactionModal()" class="px-3.5 py-2 rounded-lg bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold text-xs sm:text-sm shadow-lg shadow-emerald-950/60 transition flex items-center gap-1">
+            <span>+ Lançar Ordem</span>
+          </button>
+        </div>
+      </div>
+
+      <!-- Top Navigation Bar (Abas por Classe de Ativo mapeadas) -->
+      <nav class="flex items-center gap-1.5 overflow-x-auto no-scrollbar pt-1">
+        <button onclick="switchMainTab('DASHBOARD')" id="tab-DASHBOARD" class="nav-tab tab-active px-4 py-2.5 text-xs sm:text-sm font-semibold border-b-2 border-transparent rounded-t-lg whitespace-nowrap transition flex items-center gap-1.5">
+          <span>📊</span> Visão Geral
+        </button>
+        <button onclick="switchMainTab('ACAO_BR')" id="tab-ACAO_BR" class="nav-tab text-slate-400 hover:text-slate-200 px-4 py-2.5 text-xs sm:text-sm font-semibold border-b-2 border-transparent rounded-t-lg whitespace-nowrap transition flex items-center gap-1.5">
+          <span>🇧🇷</span> Ações B3
+        </button>
+        <button onclick="switchMainTab('FII')" id="tab-FII" class="nav-tab text-slate-400 hover:text-slate-200 px-4 py-2.5 text-xs sm:text-sm font-semibold border-b-2 border-transparent rounded-t-lg whitespace-nowrap transition flex items-center gap-1.5">
+          <span>🏢</span> FIIs (Imobiliários)
+        </button>
+        <button onclick="switchMainTab('RENDA_FIXA')" id="tab-RENDA_FIXA" class="nav-tab text-slate-400 hover:text-slate-200 px-4 py-2.5 text-xs sm:text-sm font-semibold border-b-2 border-transparent rounded-t-lg whitespace-nowrap transition flex items-center gap-1.5">
+          <span>🏦</span> Renda Fixa & CDI
+        </button>
+        <button onclick="switchMainTab('STOCK_US')" id="tab-STOCK_US" class="nav-tab text-slate-400 hover:text-slate-200 px-4 py-2.5 text-xs sm:text-sm font-semibold border-b-2 border-transparent rounded-t-lg whitespace-nowrap transition flex items-center gap-1.5">
+          <span>🇺🇸</span> Stocks EUA
+        </button>
+        <button onclick="switchMainTab('CRIPTO')" id="tab-CRIPTO" class="nav-tab text-slate-400 hover:text-slate-200 px-4 py-2.5 text-xs sm:text-sm font-semibold border-b-2 border-transparent rounded-t-lg whitespace-nowrap transition flex items-center gap-1.5">
+          <span>₿</span> Criptomoedas
+        </button>
+        <button onclick="switchMainTab('ETF_BR')" id="tab-ETF_BR" class="nav-tab text-slate-400 hover:text-slate-200 px-4 py-2.5 text-xs sm:text-sm font-semibold border-b-2 border-transparent rounded-t-lg whitespace-nowrap transition flex items-center gap-1.5">
+          <span>🌎</span> ETFs
+        </button>
+        <button onclick="switchMainTab('DIVIDENDS')" id="tab-DIVIDENDS" class="nav-tab text-slate-400 hover:text-slate-200 px-4 py-2.5 text-xs sm:text-sm font-semibold border-b-2 border-transparent rounded-t-lg whitespace-nowrap transition flex items-center gap-1.5">
+          <span>💰</span> Dividendos
+        </button>
+      </nav>
+    </div>
+  </header>
+
+  <!-- 3. MAIN CONTENT AREA -->
+  <main class="flex-1 max-w-7xl w-full mx-auto px-4 lg:px-8 py-6 space-y-6">
+
+    <!-- ==================== VIEW A: DASHBOARD CONSOLIDADO ==================== -->
+    <section id="view-DASHBOARD" class="space-y-6">
+      <!-- KPI Cards -->
+      <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4" id="kpi-cards-container"></div>
+
+      <!-- Allocation & Smart Rebalancing Row -->
+      <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
+        <!-- Allocation Donut & Breakdown -->
+        <div class="lg:col-span-7 glass-card rounded-2xl p-5">
+          <div class="flex items-center justify-between mb-4">
+            <div>
+              <h2 class="font-bold text-base text-white">Alocação da Carteira por Classe</h2>
+              <p class="text-xs text-slate-400">Clique em uma classe no topo para explorar os ativos</p>
+            </div>
+            <span id="usd-equivalent-badge" class="text-xs font-mono px-2.5 py-1 rounded-lg bg-slate-800 text-slate-300"></span>
+          </div>
+          <div class="grid grid-cols-1 sm:grid-cols-12 gap-4 items-center">
+            <div class="sm:col-span-5 flex justify-center">
+              <canvas id="allocation-canvas" width="210" height="210"></canvas>
+            </div>
+            <div class="sm:col-span-7 space-y-2.5" id="allocation-bars-list"></div>
+          </div>
+        </div>
+
+        <!-- Smart Rebalancer ("Onde aportar hoje?") -->
+        <div class="lg:col-span-5 glass-card rounded-2xl p-5 flex flex-col justify-between">
+          <div>
+            <div class="flex items-center justify-between mb-2">
+              <h2 class="font-bold text-base text-white flex items-center gap-2">
+                <span>🎯</span> Onde Aportar Hoje?
+              </h2>
+              <span class="text-[11px] px-2 py-0.5 rounded bg-emerald-500/15 text-emerald-400 font-semibold">Rebalanceamento</span>
+            </div>
+            <p class="text-xs text-slate-400 mb-3">Digite o valor do seu novo aporte e veja quanto investir em cada classe para atingir sua meta ideal:</p>
+            <div class="flex items-center gap-2 mb-4">
+              <div class="relative flex-1">
+                <span class="absolute left-3 top-2 text-xs text-slate-400 font-bold">R$</span>
+                <input type="number" id="input-rebalance-amount" value="2000" step="100"
+                  class="w-full pl-9 pr-3 py-1.5 rounded-lg bg-slate-900 border border-slate-700 text-sm text-white font-semibold focus:outline-none focus:border-emerald-500" />
+              </div>
+              <button onclick="loadRebalance()" class="px-3.5 py-1.5 rounded-lg bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold text-xs">
+                Calcular
+              </button>
+            </div>
+            <div id="rebalance-results" class="space-y-2"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Portfolio Positions Table -->
+      <div class="glass-card rounded-2xl p-5">
+        <div class="flex flex-wrap items-center justify-between gap-2 mb-4">
+          <div>
+            <h2 class="font-bold text-base text-white">Meus Ativos em Carteira (Renda Variável & Cripto)</h2>
+            <p class="text-xs text-slate-400">Clique em qualquer ativo para abrir a <strong>Página Exclusiva</strong> com Gráfico Interativo, Dividendo por Cota, Notícias e Relatórios IA</p>
+          </div>
+          <div class="flex gap-2">
+            <button onclick="openTransactionModal()" class="px-3 py-1.5 rounded-lg bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 border border-emerald-500/30 text-xs font-semibold">
+              + Compra / Venda
+            </button>
+          </div>
+        </div>
+        <div class="overflow-x-auto">
+          <table class="w-full text-left border-collapse text-xs sm:text-sm">
+            <thead>
+              <tr class="border-b border-slate-800 text-slate-400 text-[11px] uppercase">
+                <th class="py-2.5 px-3">Ativo</th>
+                <th class="py-2.5 px-3">Classe</th>
+                <th class="py-2.5 px-3 text-right">Qtd</th>
+                <th class="py-2.5 px-3 text-right">Preço Médio</th>
+                <th class="py-2.5 px-3 text-right">Preço Atual</th>
+                <th class="py-2.5 px-3 text-right">Var. Dia</th>
+                <th class="py-2.5 px-3 text-right">Últ. Div/Cota</th>
+                <th class="py-2.5 px-3 text-right">Saldo Atual (R$)</th>
+                <th class="py-2.5 px-3 text-right">Lucro / Prej.</th>
+                <th class="py-2.5 px-3 text-center">Raio-X</th>
+              </tr>
+            </thead>
+            <tbody id="portfolio-positions-tbody" class="divide-y divide-slate-800/60"></tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- ==================== VIEW B: EXPLORADOR POR ABAS DE CLASSE (AÇÕES, FIIs, STOCKS, CRIPTO, ETFs) ==================== -->
+    <section id="view-MARKET_CLASS" class="hidden space-y-5">
+      <div class="glass-card rounded-2xl p-5">
+        <div class="flex flex-col md:flex-row md:items-center justify-between gap-4">
+          <div>
+            <h2 id="market-class-title" class="font-bold text-lg text-white">Explorador de Ativos</h2>
+            <p id="market-class-subtitle" class="text-xs text-slate-400">Clique em qualquer ativo para abrir o gráfico interativo (1D, 5D, 1M, 6M, 1A), dividendos por cota, notícias e relatórios IA</p>
+          </div>
+
+          <!-- Filter: All vs Only Mine -->
+          <div class="flex items-center gap-2">
+            <button id="btn-filter-all" onclick="setPortfolioScope(false)" class="px-3 py-1.5 rounded-lg text-xs font-semibold bg-emerald-500 text-slate-950">
+              Mercado Geral
+            </button>
+            <button id="btn-filter-mine" onclick="setPortfolioScope(true)" class="px-3 py-1.5 rounded-lg text-xs font-semibold bg-slate-800 text-slate-300 hover:bg-slate-700">
+              Na Minha Carteira
+            </button>
+          </div>
+        </div>
+
+        <!-- Sorting Pills ("Em alta", "Em baixa", "Mais comprados", "Maior dividendo", "Mais descontados") -->
+        <div class="flex items-center gap-2 overflow-x-auto no-scrollbar mt-4 pt-3 border-t border-slate-800/80">
+          <span class="text-xs text-slate-400 font-medium mr-1 shrink-0">Ordenar por:</span>
+          <button onclick="setMarketSort('em_alta')" id="sort-em_alta" class="sort-pill pill-active px-3.5 py-1.5 rounded-full bg-slate-800 text-slate-300 text-xs transition shrink-0">
+            🚀 Em Alta
+          </button>
+          <button onclick="setMarketSort('em_baixa')" id="sort-em_baixa" class="sort-pill px-3.5 py-1.5 rounded-full bg-slate-800 text-slate-300 text-xs transition shrink-0">
+            📉 Em Baixa
+          </button>
+          <button onclick="setMarketSort('mais_comprados')" id="sort-mais_comprados" class="sort-pill px-3.5 py-1.5 rounded-full bg-slate-800 text-slate-300 text-xs transition shrink-0">
+            🔥 Mais Comprados (Volume)
+          </button>
+          <button onclick="setMarketSort('maior_dividendo')" id="sort-maior_dividendo" class="sort-pill px-3.5 py-1.5 rounded-full bg-slate-800 text-slate-300 text-xs transition shrink-0">
+            💰 Maior Dividendo (DY)
+          </button>
+          <button onclick="setMarketSort('mais_descontados')" id="sort-mais_descontados" class="sort-pill px-3.5 py-1.5 rounded-full bg-slate-800 text-slate-300 text-xs transition shrink-0">
+            🏷️ Mais Descontados (Menor P/VP)
+          </button>
+        </div>
+      </div>
+
+      <!-- Cards Grid of Assets -->
+      <div id="market-assets-grid" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4"></div>
+    </section>
+
+    <!-- ==================== VIEW C: PÁGINA EXCLUSIVA DO ATIVO (RAIO-X COMPLETO) ==================== -->
+    <section id="view-ASSET_DETAIL" class="hidden space-y-6">
+      <!-- Top Back Bar -->
+      <div class="flex items-center justify-between">
+        <button onclick="closeAssetDetail()" class="px-3.5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold flex items-center gap-2 border border-slate-700">
+          <span>←</span> Voltar para a Lista
+        </button>
+        <div class="flex items-center gap-2">
+          <button id="btn-detail-buy" class="px-4 py-2 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold text-xs">
+            + Lançar Compra deste Ativo
+          </button>
+        </div>
+      </div>
+
+      <!-- Block 1: Asset Header + Interactive Crosshair Evolution Chart (1D, 5D, 1M, 6M, 1Y) -->
+      <div class="glass-card rounded-2xl p-5 lg:p-6">
+        <div class="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-4 border-b border-slate-800">
+          <div>
+            <div class="flex items-center gap-2.5">
+              <span id="detail-ticker" class="text-2xl sm:text-3xl font-black text-white tracking-tight">PETR4</span>
+              <span id="detail-class-badge" class="px-2.5 py-0.5 rounded-md text-xs font-bold bg-emerald-500/15 text-emerald-400 border border-emerald-500/30">ACAO_BR</span>
+              <span id="detail-sector-badge" class="px-2.5 py-0.5 rounded-md text-xs bg-slate-800 text-slate-300">Setor</span>
+            </div>
+            <p id="detail-name" class="text-sm text-slate-400 mt-0.5">Nome da Empresa / Fundo Imobiliário</p>
+          </div>
+
+          <!-- Dynamic Price & Hover Readout -->
+          <div class="text-left md:text-right">
+            <div class="flex items-baseline md:justify-end gap-2">
+              <span id="detail-hover-price" class="text-2xl sm:text-3xl font-black text-white">R$ 0,00</span>
+              <span id="detail-hover-change" class="text-xs sm:text-sm font-bold px-2 py-0.5 rounded-md">0,00%</span>
+            </div>
+            <p id="detail-hover-date" class="text-xs text-slate-400 mt-0.5">Passe o mouse ou deslize o dedo sobre o gráfico para ver data e preço exatos</p>
+          </div>
+        </div>
+
+        <!-- Period Selector Buttons (1 Dia, 5 Dias, 1 Mês, 6 Meses, 1 Ano) -->
+        <div class="flex flex-wrap items-center justify-between gap-3 my-4">
+          <div class="flex items-center gap-1.5 bg-slate-900/90 p-1 rounded-xl border border-slate-800">
+            <button onclick="loadAssetDetailPeriod('1D')" id="period-1D" class="period-btn px-3 py-1.5 rounded-lg text-xs font-bold text-slate-300 hover:text-white transition">1 Dia</button>
+            <button onclick="loadAssetDetailPeriod('5D')" id="period-5D" class="period-btn px-3 py-1.5 rounded-lg text-xs font-bold text-slate-300 hover:text-white transition">5 Dias</button>
+            <button onclick="loadAssetDetailPeriod('1M')" id="period-1M" class="period-btn pill-active px-3 py-1.5 rounded-lg text-xs font-bold transition">1 Mês</button>
+            <button onclick="loadAssetDetailPeriod('6M')" id="period-6M" class="period-btn px-3 py-1.5 rounded-lg text-xs font-bold text-slate-300 hover:text-white transition">6 Meses</button>
+            <button onclick="loadAssetDetailPeriod('1Y')" id="period-1Y" class="period-btn px-3 py-1.5 rounded-lg text-xs font-bold text-slate-300 hover:text-white transition">1 Ano</button>
+          </div>
+          <div class="flex items-center gap-4 text-xs text-slate-400">
+            <span>Mín Período: <strong id="detail-low" class="text-slate-200">—</strong></span>
+            <span>Máx Período: <strong id="detail-high" class="text-slate-200">—</strong></span>
+            <span id="detail-user-pm-badge" class="hidden px-2.5 py-1 rounded-lg bg-amber-500/15 border border-amber-500/40 text-amber-300 font-semibold">
+              Seu Preço Médio: <strong id="detail-user-pm-val">R$ 0,00</strong>
+            </span>
+          </div>
+        </div>
+
+        <!-- Interactive Canvas Chart Container -->
+        <div class="relative w-full h-72 sm:h-80 bg-[#070b13] rounded-xl border border-slate-800/80 p-2 select-none">
+          <canvas id="asset-interactive-chart" class="w-full h-full cursor-crosshair"></canvas>
+        </div>
+
+        <!-- Fundamental Metrics Strip -->
+        <div id="detail-fundamentals-strip" class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 mt-4"></div>
+      </div>
+
+      <!-- Block 2: DIVIDENDO POR COTA & SIMULADOR + POSIÇÃO DO USUÁRIO -->
+      <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
+        <!-- Dividend Per Share Spotlight -->
+        <div class="lg:col-span-7 glass-card rounded-2xl p-5 border-l-4 border-l-emerald-500">
+          <div class="flex flex-wrap items-center justify-between gap-2 mb-4">
+            <div>
+              <h3 class="font-bold text-base text-white flex items-center gap-2">
+                <span>💵</span> Dividendo / Rendimento Pago por Cota
+              </h3>
+              <p class="text-xs text-slate-400">Valor oficial distribuído por cada 1 cota/ação e histórico de 12 meses</p>
+            </div>
+            <span id="detail-div-yield-badge" class="px-3 py-1 rounded-full bg-emerald-500/15 text-emerald-400 font-bold text-xs border border-emerald-500/30">
+              DY 12M: 0,0%
+            </span>
+          </div>
+
+          <div class="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-4">
+            <div class="p-3.5 rounded-xl bg-slate-900/90 border border-slate-800">
+              <span class="text-[11px] text-slate-400 uppercase font-semibold">Último Valor por Cota</span>
+              <div id="detail-div-per-share" class="text-2xl font-black text-emerald-400 mt-1">R$ 0,00</div>
+              <span id="detail-div-monthly-pct" class="text-[11px] text-slate-300">0,00% no mês</span>
+            </div>
+            <div class="p-3.5 rounded-xl bg-slate-900/90 border border-slate-800">
+              <span class="text-[11px] text-slate-400 uppercase font-semibold">Data Com (Data Base)</span>
+              <div id="detail-div-ex-date" class="text-base font-bold text-white mt-1.5">—</div>
+              <span class="text-[11px] text-slate-400">Direito ao provento</span>
+            </div>
+            <div class="p-3.5 rounded-xl bg-slate-900/90 border border-slate-800">
+              <span class="text-[11px] text-slate-400 uppercase font-semibold">Data de Pagamento</span>
+              <div id="detail-div-pay-date" class="text-base font-bold text-white mt-1.5">—</div>
+              <span class="text-[11px] text-emerald-400">Livre de IR (FII/Div)</span>
+            </div>
+          </div>
+
+          <!-- 12-Month Dividend Per Share Bar Chart -->
+          <div class="mt-3">
+            <div class="text-xs font-semibold text-slate-300 mb-2">Evolução do Dividendo Pago por Cota (Últimos 12 Meses)</div>
+            <div id="detail-div-bars" class="grid grid-cols-12 gap-1.5 items-end h-28 pt-4 px-2 bg-slate-900/60 rounded-xl border border-slate-800/70"></div>
+          </div>
+        </div>
+
+        <!-- User Position & Dividend Simulator for this Asset -->
+        <div class="lg:col-span-5 glass-card rounded-2xl p-5 flex flex-col justify-between">
+          <div>
+            <h3 class="font-bold text-base text-white mb-1 flex items-center gap-2">
+              <span>🧮</span> Sua Posição & Simulador de Renda Passiva
+            </h3>
+            <p class="text-xs text-slate-400 mb-4">Veja quanto suas cotas rendem ou simule qualquer quantidade de cotas:</p>
+
+            <div id="detail-user-pos-box" class="p-3.5 rounded-xl bg-slate-900/90 border border-slate-800 mb-4 space-y-2 text-xs"></div>
+
+            <div class="p-4 rounded-xl bg-emerald-950/20 border border-emerald-500/30 space-y-3">
+              <label class="block text-xs font-semibold text-emerald-300">
+                Simular Quantidade de Cotas / Ações:
+              </label>
+              <input type="number" id="sim-shares-input" value="100" min="1" step="10" oninput="updateDividendSimulator()"
+                class="w-full px-3 py-2 rounded-lg bg-slate-900 border border-slate-700 text-white font-bold text-sm focus:outline-none focus:border-emerald-500" />
+              <div class="grid grid-cols-2 gap-2 pt-1 text-xs">
+                <div>
+                  <span class="text-slate-400 block">Investimento Neces.:</span>
+                  <strong id="sim-invested-needed" class="text-white text-sm">R$ 0,00</strong>
+                </div>
+                <div>
+                  <span class="text-slate-400 block">Dividendo por Mês/Pagto:</span>
+                  <strong id="sim-monthly-income" class="text-emerald-400 text-base font-black">R$ 0,00</strong>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Block 3: RELATÓRIOS GERENCIAIS (B3 / FUNDOS.NET) + INTERPRETAÇÃO AUTOMÁTICA POR IA & NOTÍCIAS -->
+      <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
+        <!-- AI Report Analyzer & Official B3 Documents -->
+        <div class="lg:col-span-7 glass-card rounded-2xl p-5 space-y-4">
+          <div class="flex flex-wrap items-center justify-between gap-2">
+            <div>
+              <h3 class="font-bold text-base text-white flex items-center gap-2">
+                <span>🤖</span> Leitura Automática de Relatórios Oficiais (B3 / CVM)
+              </h3>
+              <p class="text-xs text-slate-400">Extração automática dos Relatórios Gerenciais, Fatos Relevantes e Avisos aos Cotistas</p>
+            </div>
+            <button onclick="reanalyzeAssetReport()" id="btn-reanalyze-ai" class="px-3 py-1.5 rounded-lg bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 border border-emerald-500/30 text-xs font-bold transition">
+              ✨ Reinterpretar Relatório
+            </button>
+          </div>
+
+          <!-- AI Interpretation Box -->
+          <div id="detail-ai-report-box" class="space-y-4"></div>
+
+          <!-- Official PDF Links List -->
+          <div class="pt-3 border-t border-slate-800">
+            <h4 class="text-xs font-bold uppercase text-slate-400 mb-2.5">Documentos Oficiais Recentes (B3 Fundos.NET / RAD CVM)</h4>
+            <div id="detail-official-docs-list" class="space-y-2"></div>
+          </div>
+        </div>
+
+        <!-- Automatic Real-Time News Feed for this Asset -->
+        <div class="lg:col-span-5 glass-card rounded-2xl p-5 flex flex-col justify-between">
+          <div>
+            <div class="flex items-center justify-between mb-3">
+              <div>
+                <h3 class="font-bold text-base text-white flex items-center gap-2">
+                  <span>📰</span> Radar de Notícias do Ativo
+                </h3>
+                <p class="text-xs text-slate-400">Verificação automática com análise de sentimento</p>
+              </div>
+              <span id="detail-news-sentiment-badge" class="px-2.5 py-1 rounded-full text-[11px] font-bold bg-emerald-500/15 text-emerald-400">
+                NEUTRO
+              </span>
+            </div>
+            <div id="detail-news-list" class="space-y-2.5"></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ==================== VIEW D: RENDA FIXA & TESOURO DIRETO ==================== -->
+    <section id="view-RENDA_FIXA" class="hidden space-y-5">
+      <div class="glass-card rounded-2xl p-5">
+        <div class="flex flex-wrap items-center justify-between gap-3 mb-4">
+          <div>
+            <h2 class="font-bold text-lg text-white">Renda Fixa, Tesouro Direto & Caixinhas (CDI / Selic / IPCA+)</h2>
+            <p class="text-xs text-slate-400">Cálculo diário automático pela taxa oficial do Banco Central já descontando a alíquota regressiva de IR (22,5% a 15%)</p>
+          </div>
+          <button onclick="openFixedIncomeModal()" class="px-4 py-2 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold text-xs">
+            + Adicionar Título / Caixinha
+          </button>
+        </div>
+        <div id="fixed-income-list" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4"></div>
+      </div>
+    </section>
+
+    <!-- ==================== VIEW E: MAPA DE DIVIDENDOS & PROVENTOS ==================== -->
+    <section id="view-DIVIDENDS" class="hidden space-y-5">
+      <div class="glass-card rounded-2xl p-5">
+        <div class="flex flex-wrap items-center justify-between gap-3 mb-4">
+          <div>
+            <h2 class="font-bold text-lg text-white">Histórico de Dividendos e Proventos Recebidos</h2>
+            <p class="text-xs text-slate-400">Controle de renda passiva isenta de IR (FIIs e Dividendos) e JCP</p>
+          </div>
+          <button onclick="openDividendModal()" class="px-4 py-2 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold text-xs">
+            + Registrar Dividendo Recebido
+          </button>
+        </div>
+        <div class="overflow-x-auto">
+          <table class="w-full text-left border-collapse text-xs sm:text-sm">
+            <thead>
+              <tr class="border-b border-slate-800 text-slate-400 text-[11px] uppercase">
+                <th class="py-2.5 px-3">Data Pagto</th>
+                <th class="py-2.5 px-3">Ativo</th>
+                <th class="py-2.5 px-3">Tipo</th>
+                <th class="py-2.5 px-3 text-right">Valor por Cota</th>
+                <th class="py-2.5 px-3 text-right">Qtd Cotas</th>
+                <th class="py-2.5 px-3 text-right">Total Recebido</th>
+                <th class="py-2.5 px-3 text-center">Ação</th>
+              </tr>
+            </thead>
+            <tbody id="dividends-tbody" class="divide-y divide-slate-800/60"></tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+  </main>
+
+  <!-- 4. MOBILE BOTTOM NAVIGATION BAR (Para uso no celular estilo App Nativo) -->
+  <div class="md:hidden fixed bottom-0 left-0 right-0 bg-[#0b101d]/95 border-t border-slate-800 px-2 py-1.5 flex items-center justify-around z-40 backdrop-blur-lg">
+    <button onclick="switchMainTab('DASHBOARD')" class="flex flex-col items-center gap-0.5 text-[11px] text-slate-300 py-1 px-2">
+      <span class="text-base">📊</span>
+      <span>Carteira</span>
+    </button>
+    <button onclick="switchMainTab('ACAO_BR')" class="flex flex-col items-center gap-0.5 text-[11px] text-slate-300 py-1 px-2">
+      <span class="text-base">🇧🇷</span>
+      <span>Ações</span>
+    </button>
+    <button onclick="switchMainTab('FII')" class="flex flex-col items-center gap-0.5 text-[11px] text-slate-300 py-1 px-2">
+      <span class="text-base">🏢</span>
+      <span>FIIs</span>
+    </button>
+    <button onclick="switchMainTab('RENDA_FIXA')" class="flex flex-col items-center gap-0.5 text-[11px] text-slate-300 py-1 px-2">
+      <span class="text-base">🏦</span>
+      <span>Renda Fixa</span>
+    </button>
+    <button onclick="switchMainTab('DIVIDENDS')" class="flex flex-col items-center gap-0.5 text-[11px] text-slate-300 py-1 px-2">
+      <span class="text-base">💰</span>
+      <span>Proventos</span>
+    </button>
+  </div>
+
+  <!-- MODAL 1: NOVA ORDEM (COMPRA / VENDA) -->
+  <div id="modal-transaction" class="fixed inset-0 bg-black/75 hidden items-center justify-center z-50 p-4">
+    <div class="bg-[#111827] border border-slate-700 rounded-2xl max-w-md w-full p-5 space-y-4">
+      <div class="flex items-center justify-between">
+        <h3 class="font-bold text-base text-white">Lançar Operação (Compra / Venda)</h3>
+        <button onclick="closeModal('modal-transaction')" class="text-slate-400 hover:text-white text-lg">✕</button>
+      </div>
+      <div class="grid grid-cols-2 gap-3 text-xs">
+        <div>
+          <label class="text-slate-400 block mb-1">Tipo de Ordem</label>
+          <select id="tx-type" class="w-full px-3 py-2 rounded-lg bg-slate-900 border border-slate-700 text-white font-semibold">
+            <option value="BUY">Compra (+)</option>
+            <option value="SELL">Venda (-)</option>
+          </select>
+        </div>
+        <div>
+          <label class="text-slate-400 block mb-1">Classe do Ativo</label>
+          <select id="tx-class" onchange="updateTxCurrency()" class="w-full px-3 py-2 rounded-lg bg-slate-900 border border-slate-700 text-white font-semibold">
+            <option value="ACAO_BR">Ação B3 (Brasil)</option>
+            <option value="FII">FII (Fundo Imobiliário)</option>
+            <option value="ETF_BR">ETF B3</option>
+            <option value="STOCK_US">Stock EUA (USD)</option>
+            <option value="CRIPTO">Criptomoeda (USD)</option>
+          </select>
+        </div>
+        <div>
+          <label class="text-slate-400 block mb-1">Ticker / Código</label>
+          <input type="text" id="tx-ticker" placeholder="Ex: PETR4, MXRF11, BTC" class="w-full px-3 py-2 rounded-lg bg-slate-900 border border-slate-700 text-white uppercase font-bold" />
+        </div>
+        <div>
+          <label class="text-slate-400 block mb-1">Data</label>
+          <input type="date" id="tx-date" class="w-full px-3 py-2 rounded-lg bg-slate-900 border border-slate-700 text-white" />
+        </div>
+        <div>
+          <label class="text-slate-400 block mb-1">Quantidade</label>
+          <input type="number" id="tx-qty" step="any" placeholder="100" class="w-full px-3 py-2 rounded-lg bg-slate-900 border border-slate-700 text-white font-semibold" />
+        </div>
+        <div>
+          <label class="text-slate-400 block mb-1">Preço Unitário</label>
+          <input type="number" id="tx-price" step="any" placeholder="35.50" class="w-full px-3 py-2 rounded-lg bg-slate-900 border border-slate-700 text-white font-semibold" />
+        </div>
+        <div>
+          <label class="text-slate-400 block mb-1">Moeda</label>
+          <select id="tx-currency" class="w-full px-3 py-2 rounded-lg bg-slate-900 border border-slate-700 text-white">
+            <option value="BRL">BRL (R$)</option>
+            <option value="USD">USD (US$)</option>
+          </select>
+        </div>
+        <div>
+          <label class="text-slate-400 block mb-1">Corretora</label>
+          <input type="text" id="tx-broker" value="XP Investimentos" class="w-full px-3 py-2 rounded-lg bg-slate-900 border border-slate-700 text-white" />
+        </div>
+      </div>
+      <div class="flex justify-end gap-2 pt-2">
+        <button onclick="closeModal('modal-transaction')" class="px-4 py-2 rounded-lg bg-slate-800 text-slate-300 text-xs font-semibold">Cancelar</button>
+        <button onclick="submitTransaction()" class="px-4 py-2 rounded-lg bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold text-xs">Salvar Operação</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL 2: NOVO TÍTULO DE RENDA FIXA -->
+  <div id="modal-fixed-income" class="fixed inset-0 bg-black/75 hidden items-center justify-center z-50 p-4">
+    <div class="bg-[#111827] border border-slate-700 rounded-2xl max-w-md w-full p-5 space-y-4">
+      <div class="flex items-center justify-between">
+        <h3 class="font-bold text-base text-white">Adicionar Renda Fixa / Tesouro / Caixinha</h3>
+        <button onclick="closeModal('modal-fixed-income')" class="text-slate-400 hover:text-white text-lg">✕</button>
+      </div>
+      <div class="grid grid-cols-2 gap-3 text-xs">
+        <div class="col-span-2">
+          <label class="text-slate-400 block mb-1">Nome do Título / Caixinha</label>
+          <input type="text" id="fi-name" placeholder="Ex: CDB Liquidez Diária 110% CDI" class="w-full px-3 py-2 rounded-lg bg-slate-900 border border-slate-700 text-white font-semibold" />
+        </div>
+        <div>
+          <label class="text-slate-400 block mb-1">Emissor / Banco</label>
+          <input type="text" id="fi-issuer" value="Nubank / BTG" class="w-full px-3 py-2 rounded-lg bg-slate-900 border border-slate-700 text-white" />
+        </div>
+        <div>
+          <label class="text-slate-400 block mb-1">Indexador</label>
+          <select id="fi-indexer" class="w-full px-3 py-2 rounded-lg bg-slate-900 border border-slate-700 text-white font-semibold">
+            <option value="CDI">% do CDI</option>
+            <option value="IPCA">IPCA + (% a.a.)</option>
+            <option value="SELIC">Taxa Selic</option>
+            <option value="PRE">Prefixado (% a.a.)</option>
+          </select>
+        </div>
+        <div>
+          <label class="text-slate-400 block mb-1">Taxa (Ex: 100 p/ 100% CDI)</label>
+          <input type="number" id="fi-rate" value="100" step="any" class="w-full px-3 py-2 rounded-lg bg-slate-900 border border-slate-700 text-white font-bold" />
+        </div>
+        <div>
+          <label class="text-slate-400 block mb-1">Valor Aplicado (R$)</label>
+          <input type="number" id="fi-amount" placeholder="5000" step="any" class="w-full px-3 py-2 rounded-lg bg-slate-900 border border-slate-700 text-white font-bold" />
+        </div>
+        <div>
+          <label class="text-slate-400 block mb-1">Data Aplicação</label>
+          <input type="date" id="fi-start" class="w-full px-3 py-2 rounded-lg bg-slate-900 border border-slate-700 text-white" />
+        </div>
+        <div>
+          <label class="text-slate-400 block mb-1">Vencimento</label>
+          <input type="date" id="fi-maturity" class="w-full px-3 py-2 rounded-lg bg-slate-900 border border-slate-700 text-white" />
+        </div>
+        <div class="col-span-2 flex items-center gap-4 pt-1">
+          <label class="flex items-center gap-2 text-slate-300 cursor-pointer">
+            <input type="checkbox" id="fi-exempt" class="rounded" /> Isento de IR (LCI / LCA / CRI / CRA)
+          </label>
+        </div>
+      </div>
+      <div class="flex justify-end gap-2 pt-2">
+        <button onclick="closeModal('modal-fixed-income')" class="px-4 py-2 rounded-lg bg-slate-800 text-slate-300 text-xs font-semibold">Cancelar</button>
+        <button onclick="submitFixedIncome()" class="px-4 py-2 rounded-lg bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold text-xs">Salvar Título</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL 3: NOVO DIVIDENDO RECEBIDO -->
+  <div id="modal-dividend" class="fixed inset-0 bg-black/75 hidden items-center justify-center z-50 p-4">
+    <div class="bg-[#111827] border border-slate-700 rounded-2xl max-w-md w-full p-5 space-y-4">
+      <div class="flex items-center justify-between">
+        <h3 class="font-bold text-base text-white">Registrar Provento / Dividendo Recebido</h3>
+        <button onclick="closeModal('modal-dividend')" class="text-slate-400 hover:text-white text-lg">✕</button>
+      </div>
+      <div class="grid grid-cols-2 gap-3 text-xs">
+        <div>
+          <label class="text-slate-400 block mb-1">Ticker do Ativo</label>
+          <input type="text" id="div-ticker" placeholder="MXRF11" class="w-full px-3 py-2 rounded-lg bg-slate-900 border border-slate-700 text-white uppercase font-bold" />
+        </div>
+        <div>
+          <label class="text-slate-400 block mb-1">Data de Pagamento</label>
+          <input type="date" id="div-date" class="w-full px-3 py-2 rounded-lg bg-slate-900 border border-slate-700 text-white" />
+        </div>
+        <div>
+          <label class="text-slate-400 block mb-1">Valor por Cota (R$)</label>
+          <input type="number" id="div-per-share" step="any" placeholder="0.10" class="w-full px-3 py-2 rounded-lg bg-slate-900 border border-slate-700 text-white font-bold" />
+        </div>
+        <div>
+          <label class="text-slate-400 block mb-1">Quantidade de Cotas</label>
+          <input type="number" id="div-qty" step="any" placeholder="350" class="w-full px-3 py-2 rounded-lg bg-slate-900 border border-slate-700 text-white font-bold" />
+        </div>
+      </div>
+      <div class="flex justify-end gap-2 pt-2">
+        <button onclick="closeModal('modal-dividend')" class="px-4 py-2 rounded-lg bg-slate-800 text-slate-300 text-xs font-semibold">Cancelar</button>
+        <button onclick="submitDividend()" class="px-4 py-2 rounded-lg bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold text-xs">Salvar Provento</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL 4: CONECTAR NO CELULAR (QR CODE PWA) -->
+  <div id="modal-mobile" class="fixed inset-0 bg-black/75 hidden items-center justify-center z-50 p-4">
+    <div class="bg-[#111827] border border-slate-700 rounded-2xl max-w-sm w-full p-6 text-center space-y-4">
+      <div class="flex items-center justify-between">
+        <h3 class="font-bold text-base text-white">📱 Usar o SIM no Celular</h3>
+        <button onclick="closeModal('modal-mobile')" class="text-slate-400 hover:text-white text-lg">✕</button>
+      </div>
+      <p class="text-xs text-slate-300">
+        Com o celular conectado no mesmo Wi-Fi do computador, aponte a câmera para o QR Code abaixo ou acesse o endereço:
+      </p>
+      <div class="flex justify-center py-2">
+        <img id="mobile-qr-img" src="" alt="QR Code Celular" class="w-48 h-48 rounded-xl border-4 border-white bg-white p-1" />
+      </div>
+      <div id="mobile-url-box" class="px-3 py-2 rounded-lg bg-slate-900 border border-slate-700 font-mono text-sm text-emerald-400 font-bold select-all">
+        http://192.168.x.x:8000
+      </div>
+      <p class="text-[11px] text-slate-400">
+        💡 <strong>Dica:</strong> No celular, toque em <em>"Adicionar à Tela de Início"</em> (no Safari ou Chrome) para instalar o <strong>SIM</strong> como aplicativo nativo em tela cheia!
+      </p>
+    </div>
+  </div>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>
