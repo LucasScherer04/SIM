@@ -108,7 +108,8 @@
           <span>💼</span> Minha Carteira
         </button>
         <button onclick="switchMainTab('ACAO_BR')" id="tab-ACAO_BR" class="nav-tab text-slate-400 hover:text-slate-200 px-4 py-2.5 text-xs sm:text-sm font-semibold border-b-2 border-transparent rounded-t-lg whitespace-nowrap transition flex items-center gap-1.5">
-          <span>🇧🇷</span> Explorar Ações B3
+          <svg class="w-4 h-3 inline-block rounded-[2px] shadow-sm shrink-0" viewBox="0 0 28 20" fill="none"><rect width="28" height="20" rx="2" fill="#009B3A"/><path d="M14 2.5L25.5 10L14 17.5L2.5 10L14 2.5Z" fill="#FEDF00"/><circle cx="14" cy="10" r="4.2" fill="#002776"/><path d="M10.1 8.8C12.5 8.1 15.6 8.6 18.1 10.3" stroke="#FFFFFF" stroke-width="1" stroke-linecap="round"/></svg>
+          <span>Ações B3</span>
         </button>
         <button onclick="switchMainTab('FII')" id="tab-FII" class="nav-tab text-slate-400 hover:text-slate-200 px-4 py-2.5 text-xs sm:text-sm font-semibold border-b-2 border-transparent rounded-t-lg whitespace-nowrap transition flex items-center gap-1.5">
           <span>🏢</span> Explorar FIIs
@@ -117,7 +118,8 @@
           <span>🏦</span> Renda Fixa & Caixinhas
         </button>
         <button onclick="switchMainTab('STOCK_US')" id="tab-STOCK_US" class="nav-tab text-slate-400 hover:text-slate-200 px-4 py-2.5 text-xs sm:text-sm font-semibold border-b-2 border-transparent rounded-t-lg whitespace-nowrap transition flex items-center gap-1.5">
-          <span>🇺🇸</span> Stocks EUA
+          <svg class="w-4 h-3 inline-block rounded-[2px] shadow-sm shrink-0" viewBox="0 0 28 20" fill="none"><rect width="28" height="20" rx="2" fill="#FFFFFF"/><path d="M0 0H28V2.8H0V0ZM0 5.6H28V8.4H0V5.6ZM0 11.2H28V14H0V11.2ZM0 16.8H28V20H0V16.8Z" fill="#B22234"/><rect width="12" height="11.2" rx="1" fill="#3C3B6E"/><circle cx="3" cy="2.8" r="0.9" fill="#FFF"/><circle cx="6" cy="2.8" r="0.9" fill="#FFF"/><circle cx="9" cy="2.8" r="0.9" fill="#FFF"/><circle cx="4.5" cy="5.6" r="0.9" fill="#FFF"/><circle cx="7.5" cy="5.6" r="0.9" fill="#FFF"/><circle cx="3" cy="8.4" r="0.9" fill="#FFF"/><circle cx="6" cy="8.4" r="0.9" fill="#FFF"/><circle cx="9" cy="8.4" r="0.9" fill="#FFF"/></svg>
+          <span>Stocks EUA</span>
         </button>
         <button onclick="switchMainTab('CRIPTO')" id="tab-CRIPTO" class="nav-tab text-slate-400 hover:text-slate-200 px-4 py-2.5 text-xs sm:text-sm font-semibold border-b-2 border-transparent rounded-t-lg whitespace-nowrap transition flex items-center gap-1.5">
           <span>₿</span> Criptomoedas
@@ -186,8 +188,9 @@
           <button onclick="openAddInvestmentModal('FII')" class="px-4 py-2.5 rounded-xl bg-blue-500 hover:bg-blue-400 text-slate-950 font-bold text-xs sm:text-sm shadow-lg transition">
             🏢 Adicionar Fundo Imobiliário (FII)
           </button>
-          <button onclick="openAddInvestmentModal('ACAO_BR')" class="px-4 py-2.5 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold text-xs sm:text-sm shadow-lg transition">
-            🇧🇷 Adicionar Ação (B3)
+          <button onclick="openAddInvestmentModal('ACAO_BR')" class="px-4 py-2.5 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold text-xs sm:text-sm shadow-lg transition flex items-center gap-2">
+            <svg class="w-4 h-3 inline-block rounded-[2px] shadow-sm shrink-0" viewBox="0 0 28 20" fill="none"><rect width="28" height="20" rx="2" fill="#009B3A"/><path d="M14 2.5L25.5 10L14 17.5L2.5 10L14 2.5Z" fill="#FEDF00"/><circle cx="14" cy="10" r="4.2" fill="#002776"/><path d="M10.1 8.8C12.5 8.1 15.6 8.6 18.1 10.3" stroke="#FFFFFF" stroke-width="1" stroke-linecap="round"/></svg>
+            <span>Adicionar Ação (B3)</span>
           </button>
           <button onclick="openAddInvestmentModal('CAIXINHA')" class="px-4 py-2.5 rounded-xl bg-purple-500 hover:bg-purple-400 text-white font-bold text-xs sm:text-sm shadow-lg transition">
             💜 Adicionar Caixinha Nubank / CDI
@@ -258,6 +261,20 @@
             </div>
           </div>
         </div>
+
+        <!-- Painel Rápido de Ativos Cadastrados na Carteira (Com botão direto para Excluir qualquer Ação, FII ou Renda Fixa) -->
+        <div id="quick-holdings-panel" class="hidden glass-card rounded-2xl p-5 space-y-3">
+          <div class="flex flex-wrap items-center justify-between gap-2">
+            <div>
+              <h3 class="font-bold text-sm sm:text-base text-white">Meus Ativos na Carteira (Gerenciamento Rápido)</h3>
+              <p class="text-xs text-slate-400">Clique no ativo para abrir o gráfico/detalhes ou clique em <strong>🗑️ Excluir</strong> ao lado de qualquer item colocado incorretamente</p>
+            </div>
+            <button onclick="switchPortfolioSubTab('CATEGORIES')" class="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-emerald-400 text-xs font-bold border border-slate-700">
+              Ver Separado por Categorias →
+            </button>
+          </div>
+          <div id="quick-holdings-grid" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3"></div>
+        </div>
       </div>
 
       <!-- SUB-ABA 2: LISTA DE INVESTIMENTOS SEPARADA POR CATEGORIAS -->
@@ -271,8 +288,9 @@
             <button onclick="setCategoryListFilter('FII')" id="catfilter-FII" class="cat-filter-btn px-3.5 py-1.5 rounded-full bg-slate-800 text-slate-300 text-xs font-semibold transition shrink-0">
               🏢 FIIs
             </button>
-            <button onclick="setCategoryListFilter('ACAO_BR')" id="catfilter-ACAO_BR" class="cat-filter-btn px-3.5 py-1.5 rounded-full bg-slate-800 text-slate-300 text-xs font-semibold transition shrink-0">
-              🇧🇷 Ações B3
+            <button onclick="setCategoryListFilter('ACAO_BR')" id="catfilter-ACAO_BR" class="cat-filter-btn px-3.5 py-1.5 rounded-full bg-slate-800 text-slate-300 text-xs font-semibold transition shrink-0 flex items-center gap-1.5">
+              <svg class="w-4 h-3 inline-block rounded-[2px] shadow-sm shrink-0" viewBox="0 0 28 20" fill="none"><rect width="28" height="20" rx="2" fill="#009B3A"/><path d="M14 2.5L25.5 10L14 17.5L2.5 10L14 2.5Z" fill="#FEDF00"/><circle cx="14" cy="10" r="4.2" fill="#002776"/><path d="M10.1 8.8C12.5 8.1 15.6 8.6 18.1 10.3" stroke="#FFFFFF" stroke-width="1" stroke-linecap="round"/></svg>
+              <span>Ações B3</span>
             </button>
             <button onclick="setCategoryListFilter('CAIXINHA')" id="catfilter-CAIXINHA" class="cat-filter-btn px-3.5 py-1.5 rounded-full bg-slate-800 text-slate-300 text-xs font-semibold transition shrink-0">
               💜 Caixinhas (Nubank/CDI)
@@ -294,6 +312,30 @@
 
         <!-- Container onde as categorias e seus respectivos ativos são renderizados -->
         <div id="categorized-investments-container" class="space-y-6"></div>
+
+        <!-- Histórico de Lançamentos Individuais (permite apagar apenas uma compra/venda específica sem apagar o ativo todo) -->
+        <div id="individual-transactions-panel" class="hidden glass-card rounded-2xl p-5 space-y-3">
+          <div>
+            <h3 class="font-bold text-sm sm:text-base text-white">Histórico de Lançamentos Individuais (Ordens Registradas)</h3>
+            <p class="text-xs text-slate-400">Se você lançou uma compra ou venda duplicada/incorreta de uma Ação ou FII, pode excluir apenas aquele lançamento individual abaixo:</p>
+          </div>
+          <div class="overflow-x-auto">
+            <table class="w-full text-left border-collapse text-xs">
+              <thead>
+                <tr class="border-b border-slate-800 text-slate-400 uppercase text-[11px]">
+                  <th class="py-2 px-3">Data</th>
+                  <th class="py-2 px-3">Ativo</th>
+                  <th class="py-2 px-3">Tipo</th>
+                  <th class="py-2 px-3 text-right">Qtd</th>
+                  <th class="py-2 px-3 text-right">Preço Unit.</th>
+                  <th class="py-2 px-3">Corretora</th>
+                  <th class="py-2 px-3 text-center">Excluir Ordem</th>
+                </tr>
+              </thead>
+              <tbody id="individual-transactions-tbody" class="divide-y divide-slate-800/60"></tbody>
+            </table>
+          </div>
+        </div>
       </div>
     </section>
 
@@ -350,6 +392,9 @@
           <span>←</span> Voltar para a Lista
         </button>
         <div class="flex items-center gap-2">
+          <button id="btn-detail-delete" class="hidden px-3.5 py-2 rounded-xl bg-rose-500/15 hover:bg-rose-500/25 text-rose-300 border border-rose-500/30 font-bold text-xs">
+            🗑️ Remover Ativo da Carteira
+          </button>
           <button id="btn-detail-buy" class="px-4 py-2 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold text-xs">
             + Lançar Compra deste Ativo
           </button>
@@ -579,7 +624,7 @@
       <span>Carteira</span>
     </button>
     <button onclick="switchMainTab('ACAO_BR')" class="flex flex-col items-center gap-0.5 text-[11px] text-slate-300 py-1 px-2">
-      <span class="text-base">🇧🇷</span>
+      <svg class="w-5 h-3.5 inline-block rounded-[2px] shadow-sm" viewBox="0 0 28 20" fill="none"><rect width="28" height="20" rx="2" fill="#009B3A"/><path d="M14 2.5L25.5 10L14 17.5L2.5 10L14 2.5Z" fill="#FEDF00"/><circle cx="14" cy="10" r="4.2" fill="#002776"/><path d="M10.1 8.8C12.5 8.1 15.6 8.6 18.1 10.3" stroke="#FFFFFF" stroke-width="1" stroke-linecap="round"/></svg>
       <span>Ações</span>
     </button>
     <button onclick="switchMainTab('FII')" class="flex flex-col items-center gap-0.5 text-[11px] text-slate-300 py-1 px-2">
@@ -624,11 +669,11 @@
           <button type="button" onclick="quickPickTicker('XPML11','FII')" class="px-2 py-1 rounded bg-blue-500/15 hover:bg-blue-500/25 text-blue-300 border border-blue-500/30 text-[11px] font-bold">🏢 XPML11</button>
           <button type="button" onclick="quickPickTicker('KNCR11','FII')" class="px-2 py-1 rounded bg-blue-500/15 hover:bg-blue-500/25 text-blue-300 border border-blue-500/30 text-[11px] font-bold">🏢 KNCR11</button>
           <button type="button" onclick="quickPickTicker('BTLG11','FII')" class="px-2 py-1 rounded bg-blue-500/15 hover:bg-blue-500/25 text-blue-300 border border-blue-500/30 text-[11px] font-bold">🏢 BTLG11</button>
-          <button type="button" onclick="quickPickTicker('PETR4','ACAO_BR')" class="px-2 py-1 rounded bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-300 border border-emerald-500/30 text-[11px] font-bold">🇧🇷 PETR4</button>
-          <button type="button" onclick="quickPickTicker('BBAS3','ACAO_BR')" class="px-2 py-1 rounded bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-300 border border-emerald-500/30 text-[11px] font-bold">🇧🇷 BBAS3</button>
-          <button type="button" onclick="quickPickTicker('VALE3','ACAO_BR')" class="px-2 py-1 rounded bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-300 border border-emerald-500/30 text-[11px] font-bold">🇧🇷 VALE3</button>
-          <button type="button" onclick="quickPickTicker('WEGE3','ACAO_BR')" class="px-2 py-1 rounded bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-300 border border-emerald-500/30 text-[11px] font-bold">🇧🇷 WEGE3</button>
-          <button type="button" onclick="quickPickTicker('ITUB4','ACAO_BR')" class="px-2 py-1 rounded bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-300 border border-emerald-500/30 text-[11px] font-bold">🇧🇷 ITUB4</button>
+          <button type="button" onclick="quickPickTicker('PETR4','ACAO_BR')" class="px-2 py-1 rounded bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-300 border border-emerald-500/30 text-[11px] font-bold flex items-center gap-1"><svg class="w-3.5 h-2.5 inline-block rounded-[1px]" viewBox="0 0 28 20" fill="none"><rect width="28" height="20" rx="2" fill="#009B3A"/><path d="M14 2.5L25.5 10L14 17.5L2.5 10L14 2.5Z" fill="#FEDF00"/><circle cx="14" cy="10" r="4.2" fill="#002776"/></svg>PETR4</button>
+          <button type="button" onclick="quickPickTicker('BBAS3','ACAO_BR')" class="px-2 py-1 rounded bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-300 border border-emerald-500/30 text-[11px] font-bold flex items-center gap-1"><svg class="w-3.5 h-2.5 inline-block rounded-[1px]" viewBox="0 0 28 20" fill="none"><rect width="28" height="20" rx="2" fill="#009B3A"/><path d="M14 2.5L25.5 10L14 17.5L2.5 10L14 2.5Z" fill="#FEDF00"/><circle cx="14" cy="10" r="4.2" fill="#002776"/></svg>BBAS3</button>
+          <button type="button" onclick="quickPickTicker('VALE3','ACAO_BR')" class="px-2 py-1 rounded bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-300 border border-emerald-500/30 text-[11px] font-bold flex items-center gap-1"><svg class="w-3.5 h-2.5 inline-block rounded-[1px]" viewBox="0 0 28 20" fill="none"><rect width="28" height="20" rx="2" fill="#009B3A"/><path d="M14 2.5L25.5 10L14 17.5L2.5 10L14 2.5Z" fill="#FEDF00"/><circle cx="14" cy="10" r="4.2" fill="#002776"/></svg>VALE3</button>
+          <button type="button" onclick="quickPickTicker('WEGE3','ACAO_BR')" class="px-2 py-1 rounded bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-300 border border-emerald-500/30 text-[11px] font-bold flex items-center gap-1"><svg class="w-3.5 h-2.5 inline-block rounded-[1px]" viewBox="0 0 28 20" fill="none"><rect width="28" height="20" rx="2" fill="#009B3A"/><path d="M14 2.5L25.5 10L14 17.5L2.5 10L14 2.5Z" fill="#FEDF00"/><circle cx="14" cy="10" r="4.2" fill="#002776"/></svg>WEGE3</button>
+          <button type="button" onclick="quickPickTicker('ITUB4','ACAO_BR')" class="px-2 py-1 rounded bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-300 border border-emerald-500/30 text-[11px] font-bold flex items-center gap-1"><svg class="w-3.5 h-2.5 inline-block rounded-[1px]" viewBox="0 0 28 20" fill="none"><rect width="28" height="20" rx="2" fill="#009B3A"/><path d="M14 2.5L25.5 10L14 17.5L2.5 10L14 2.5Z" fill="#FEDF00"/><circle cx="14" cy="10" r="4.2" fill="#002776"/></svg>ITUB4</button>
         </div>
       </div>
 
@@ -637,10 +682,10 @@
           <label class="text-slate-400 block mb-1">Categoria do Ativo</label>
           <select id="tx-class" onchange="updateTxCurrency()" class="w-full px-3 py-2 rounded-lg bg-slate-900 border border-slate-700 text-white font-semibold">
             <option value="FII">🏢 Fundo Imobiliário (FII / Fiagro)</option>
-            <option value="ACAO_BR">🇧🇷 Ação Brasileira (B3)</option>
+            <option value="ACAO_BR">🟢 Ação Brasileira (B3)</option>
             <option value="ETF_BR">🌎 ETF listado na B3</option>
             <option value="FUNDO_INV">📈 Fundo de Investimento (Cotas)</option>
-            <option value="STOCK_US">🇺🇸 Stock / REIT EUA (USD)</option>
+            <option value="STOCK_US">🔵 Stock / REIT EUA (USD)</option>
             <option value="CRIPTO">₿ Criptomoeda (USD)</option>
           </select>
         </div>
@@ -845,6 +890,11 @@
         💡 <strong>Dica:</strong> No celular, toque em <em>"Adicionar à Tela de Início"</em> (no Safari ou Chrome) para instalar o <strong>SIM</strong> como aplicativo nativo em tela cheia!
       </p>
     </div>
+  </div>
+
+  <!-- TOAST DE NOTIFICAÇÃO FLUTUANTE -->
+  <div id="toast-notification" class="fixed bottom-16 md:bottom-6 right-6 z-50 hidden px-4 py-3 rounded-xl bg-slate-900/95 border border-emerald-500/50 text-white text-xs sm:text-sm font-bold shadow-2xl flex items-center gap-2">
+    <span id="toast-text">Operação realizada!</span>
   </div>
 
   <script src="/static/app.js"></script>

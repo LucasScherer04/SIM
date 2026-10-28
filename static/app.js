@@ -44,15 +44,19 @@ const CLASS_NAMES = {
   CRIPTO: "Criptomoedas (Tempo Real)",
 };
 
+const FLAG_BR_SVG = `<svg class="w-4 h-3 rounded-[2px] shadow-sm shrink-0 inline-block align-middle" viewBox="0 0 28 20" fill="none"><rect width="28" height="20" rx="2" fill="#009B3A"/><polygon points="14,2.2 25.5,10 14,17.8 2.5,10" fill="#FEDF00"/><circle cx="14" cy="10" r="4.3" fill="#002776"/><path d="M10 9.4C11.8 8.3 15.6 8.6 18 10.6" stroke="#FFFFFF" stroke-width="1" stroke-linecap="round"/></svg>`;
+
+const FLAG_US_SVG = `<svg class="w-4 h-3 rounded-[2px] shadow-sm shrink-0 inline-block align-middle" viewBox="0 0 28 20" fill="none"><rect width="28" height="20" rx="2" fill="#FFFFFF"/><path d="M0 0H28V2H0V0ZM0 4H28V6H0V4ZM0 8H28V10H0V8ZM0 12H28V14H0V12ZM0 16H28V18H0V16Z" fill="#B22234"/><rect width="12" height="10" fill="#3C3B6E"/><circle cx="2.5" cy="2.2" r="0.7" fill="white"/><circle cx="6" cy="2.2" r="0.7" fill="white"/><circle cx="9.5" cy="2.2" r="0.7" fill="white"/><circle cx="4.2" cy="5" r="0.7" fill="white"/><circle cx="7.8" cy="5" r="0.7" fill="white"/><circle cx="2.5" cy="7.8" r="0.7" fill="white"/><circle cx="6" cy="7.8" r="0.7" fill="white"/><circle cx="9.5" cy="7.8" r="0.7" fill="white"/></svg>`;
+
 const CLASS_ICONS = {
   FII: "🏢",
-  ACAO_BR: "🇧🇷",
+  ACAO_BR: FLAG_BR_SVG,
   CAIXINHA: "💜",
   RENDA_FIXA: "🏦",
   TESOURO: "🏛️",
   FUNDO_INV: "📈",
   ETF_BR: "🌎",
-  STOCK_US: "🇺🇸",
+  STOCK_US: FLAG_US_SVG,
   CRIPTO: "₿",
 };
 
@@ -269,7 +273,8 @@ function renderPortfolioDonutAndBars(data) {
     const assets = data.allocation_by_asset || [];
     slices = assets.map((a, idx) => ({
       key: a.code,
-      label: `${a.code}`,
+      label: `${CLASS_ICONS[a.asset_class] || "📊"} ${a.code}`,
+      canvasLabel: `${a.code}`,
       sublabel: a.name !== a.code ? a.name : a.category_label,
       current_brl: a.current_brl,
       invested_brl: a.invested_brl,
@@ -279,12 +284,14 @@ function renderPortfolioDonutAndBars(data) {
       color: ASSET_PALETTE[idx % ASSET_PALETTE.length],
       asset_class: a.asset_class,
       is_fixed_income: a.is_fixed_income,
+      fi_id: a.fi_id,
     }));
   } else {
     const alloc = (data.allocation || []).filter(it => it.current_brl > 0 || it.target_pct > 0);
     slices = alloc.map(it => ({
       key: it.asset_class,
       label: `${CLASS_ICONS[it.asset_class] || "📊"} ${it.label}`,
+      canvasLabel: `${it.label}`,
       sublabel: `${it.count || 0} ativo(s) na carteira · Meta: ${it.target_pct}%`,
       current_brl: it.current_brl,
       invested_brl: it.invested_brl || 0,
@@ -297,6 +304,7 @@ function renderPortfolioDonutAndBars(data) {
   }
 
   renderInteractiveDonutCanvas(slices, data.kpis.total_current_brl);
+  renderQuickHoldingsGrid(data);
 
   const activeSlices = slices.filter(s => s.current_brl > 0);
   if (activeSlices.length === 0) {
@@ -314,6 +322,11 @@ function renderPortfolioDonutAndBars(data) {
     const clickAction = STATE.donutMode === "ASSET" && !item.is_fixed_income
       ? `openAssetDetail('${item.key}')`
       : `openCategoryFromDonut('${item.asset_class}')`;
+    const deleteBtn = STATE.donutMode === "ASSET"
+      ? (item.is_fixed_income && item.fi_id
+          ? `<button onclick="deleteFixedIncome(${item.fi_id}, event)" class="ml-2 px-2 py-1 rounded-lg bg-rose-500/15 hover:bg-rose-500/30 text-rose-400 text-[11px] font-bold border border-rose-500/30 shrink-0" title="Remover ${item.key} da carteira">🗑️ Excluir</button>`
+          : `<button onclick="deleteVariablePosition('${item.key}', event)" class="ml-2 px-2 py-1 rounded-lg bg-rose-500/15 hover:bg-rose-500/30 text-rose-400 text-[11px] font-bold border border-rose-500/30 shrink-0" title="Remover ${item.key} da carteira">🗑️ Excluir</button>`)
+      : "";
     return `
       <div class="space-y-1.5 cursor-pointer bg-slate-900/65 hover:bg-slate-800/80 border border-slate-800/80 p-3 rounded-xl transition"
            onmouseenter="highlightDonutSlice(${idx})"
@@ -323,13 +336,16 @@ function renderPortfolioDonutAndBars(data) {
           <div class="flex items-center gap-2 min-w-0">
             <span class="w-3 h-3 rounded-full shrink-0" style="background:${item.color}"></span>
             <div class="truncate">
-              <span class="font-bold text-white">${item.label}</span>
+              <span class="font-bold text-white inline-flex items-center gap-1.5">${item.label}</span>
               <span class="text-[11px] text-slate-400 block truncate">${item.sublabel}</span>
             </div>
           </div>
-          <div class="text-right shrink-0 ml-2">
-            <div class="font-mono font-bold text-white">${fmtMoney(item.current_brl)} <span class="text-emerald-400">(${item.pct.toFixed(1)}%)</span></div>
-            <div class="text-[11px] font-mono ${profCls}">Lucro: ${fmtMoney(item.profit_brl)} (${fmtPct(item.profit_pct)})</div>
+          <div class="flex items-center shrink-0 ml-2">
+            <div class="text-right">
+              <div class="font-mono font-bold text-white">${fmtMoney(item.current_brl)} <span class="text-emerald-400">(${item.pct.toFixed(1)}%)</span></div>
+              <div class="text-[11px] font-mono ${profCls}">Lucro: ${fmtMoney(item.profit_brl)} (${fmtPct(item.profit_pct)})</div>
+            </div>
+            ${deleteBtn}
           </div>
         </div>
         <div class="w-full h-2 bg-slate-800 rounded-full overflow-hidden">
@@ -338,6 +354,72 @@ function renderPortfolioDonutAndBars(data) {
       </div>
     `;
   }).join("");
+}
+
+function renderQuickHoldingsGrid(data) {
+  const panel = document.getElementById("quick-holdings-panel");
+  const grid = document.getElementById("quick-holdings-grid");
+  if (!panel || !grid) return;
+
+  const positions = data.positions || [];
+  const fixedIncome = data.fixed_income || [];
+  if (positions.length === 0 && fixedIncome.length === 0) {
+    panel.classList.add("hidden");
+    grid.innerHTML = "";
+    return;
+  }
+
+  panel.classList.remove("hidden");
+  const posCards = positions.map(p => {
+    const icon = CLASS_ICONS[p.asset_class] || "📊";
+    const profCls = p.profit_brl >= 0 ? "text-emerald-400" : "text-rose-400";
+    return `
+      <div class="p-3 rounded-xl bg-slate-900/85 border border-slate-800 hover:border-slate-700 flex items-center justify-between gap-2 transition">
+        <div class="min-w-0 cursor-pointer" onclick="openAssetDetail('${p.ticker}')">
+          <div class="flex items-center gap-1.5">
+            <span>${icon}</span>
+            <span class="font-black text-white text-sm hover:text-emerald-400 transition">${p.ticker}</span>
+            <span class="text-[10px] px-1.5 py-0.5 rounded bg-slate-800 text-slate-300 font-mono">${p.quantity} cotas</span>
+          </div>
+          <div class="text-[11px] text-slate-400 truncate mt-0.5">${p.name}</div>
+          <div class="text-xs font-mono font-bold text-white mt-1">
+            ${fmtMoney(p.current_brl)} <span class="${profCls} text-[11px]">(${fmtPct(p.profit_pct)})</span>
+          </div>
+        </div>
+        <div class="flex flex-col items-end gap-1.5 shrink-0">
+          <button onclick="deleteVariablePosition('${p.ticker}', event)" class="px-2.5 py-1.5 rounded-lg bg-rose-500/15 hover:bg-rose-500/30 text-rose-400 text-xs font-bold border border-rose-500/30 transition flex items-center gap-1" title="Eliminar ${p.ticker} da carteira">
+            🗑️ Excluir
+          </button>
+          <button onclick="openTransactionModal('${p.ticker}','${p.asset_class}',${p.current_price},'${p.currency}')" class="px-2 py-0.5 rounded bg-slate-800 hover:bg-slate-700 text-[10px] text-slate-300 border border-slate-700">
+            + / - Cotas
+          </button>
+        </div>
+      </div>
+    `;
+  });
+
+  const fiCards = fixedIncome.map(f => {
+    const icon = CLASS_ICONS[f.asset_class] || "🏦";
+    return `
+      <div class="p-3 rounded-xl bg-slate-900/85 border border-slate-800 hover:border-slate-700 flex items-center justify-between gap-2 transition">
+        <div class="min-w-0">
+          <div class="flex items-center gap-1.5">
+            <span>${icon}</span>
+            <span class="font-bold text-white text-xs sm:text-sm truncate">${f.title_name}</span>
+          </div>
+          <div class="text-[11px] text-slate-400 truncate mt-0.5">${f.issuer} · ${f.rate_label}</div>
+          <div class="text-xs font-mono font-bold text-emerald-400 mt-1">
+            ${fmtMoney(f.net_amount)} <span class="text-[11px]">(${fmtPct(f.net_profit_pct)})</span>
+          </div>
+        </div>
+        <button onclick="deleteFixedIncome(${f.id}, event)" class="px-2.5 py-1.5 rounded-lg bg-rose-500/15 hover:bg-rose-500/30 text-rose-400 text-xs font-bold border border-rose-500/30 transition shrink-0 flex items-center gap-1" title="Eliminar este título/caixinha da carteira">
+          🗑️ Excluir
+        </button>
+      </div>
+    `;
+  });
+
+  grid.innerHTML = [...posCards, ...fiCards].join("");
 }
 
 function openCategoryFromDonut(assetClass) {
@@ -439,7 +521,8 @@ function drawDonutWithHover(activeSlices, totalBrl, hoverIdx = null) {
 
   if (hoverIdx !== null && activeSlices[hoverIdx]) {
     const s = activeSlices[hoverIdx];
-    const cleanTitle = s.label.replace(/^[^\wA-Za-zÀ-ÿ]+/, "").slice(0, 16);
+    const rawTitle = s.canvasLabel || s.label || "";
+    const cleanTitle = rawTitle.replace(/^[^\wA-Za-zÀ-ÿ]+/, "").slice(0, 16);
     ctx.fillStyle = "#cbd5e1";
     ctx.font = "bold 11px Inter, sans-serif";
     ctx.textAlign = "center";
@@ -493,7 +576,7 @@ function renderCategorizedInvestments(data) {
     {
       key: "ACAO_BR",
       filterGroup: "ACAO_BR",
-      icon: "🇧🇷",
+      icon: FLAG_BR_SVG,
       title: "Ações Brasileiras (B3)",
       subtitle: "Participação em empresas listadas na Bolsa do Brasil",
       borderColor: "border-l-emerald-500",
@@ -617,8 +700,8 @@ function renderCategorizedInvestments(data) {
                 <button onclick="openTransactionModal('${p.ticker}','${p.asset_class}',${p.current_price},'${p.currency}')" class="px-2 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-bold border border-slate-700" title="Registrar nova compra ou venda deste ativo">
                   + / -
                 </button>
-                <button onclick="deleteVariablePosition('${p.ticker}')" class="px-2 py-1 rounded-lg bg-rose-500/10 hover:bg-rose-500/25 text-rose-400 text-xs border border-rose-500/20" title="Remover ativo da carteira">
-                  🗑️
+                <button onclick="deleteVariablePosition('${p.ticker}', event)" class="px-2.5 py-1 rounded-lg bg-rose-500/15 hover:bg-rose-500/30 text-rose-400 text-xs font-bold border border-rose-500/30 transition" title="Remover este ativo da carteira">
+                  🗑️ Excluir
                 </button>
               </div>
             </td>
@@ -661,8 +744,8 @@ function renderCategorizedInvestments(data) {
                 <h4 class="font-bold text-sm sm:text-base text-white mt-1.5">${f.title_name}</h4>
                 <p class="text-xs text-slate-400">${f.issuer} · Aplicado em ${f.start_date} (${f.days_elapsed} dias)</p>
               </div>
-              <button onclick="deleteFixedIncome(${f.id})" title="Remover da carteira" class="px-2 py-1 rounded-lg bg-rose-500/10 hover:bg-rose-500/25 text-rose-400 text-xs border border-rose-500/20">
-                🗑️
+              <button onclick="deleteFixedIncome(${f.id}, event)" title="Remover da carteira" class="px-2.5 py-1 rounded-lg bg-rose-500/15 hover:bg-rose-500/30 text-rose-400 text-xs font-bold border border-rose-500/30 transition shrink-0">
+                🗑️ Excluir
               </button>
             </div>
             <div class="grid grid-cols-2 sm:grid-cols-4 gap-2 pt-3 border-t border-slate-800/80 text-xs">
@@ -694,7 +777,7 @@ function renderCategorizedInvestments(data) {
       <div class="glass-card rounded-2xl p-5 border-l-4 ${cat.borderColor} space-y-4">
         <div class="flex flex-wrap items-center justify-between gap-3 pb-3 border-b border-slate-800/80">
           <div class="flex items-center gap-3">
-            <span class="text-2xl">${cat.icon}</span>
+            <span class="text-2xl flex items-center">${cat.icon}</span>
             <div>
               <div class="flex items-center gap-2">
                 <h3 class="font-bold text-base text-white">${cat.title}</h3>
@@ -717,6 +800,44 @@ function renderCategorizedInvestments(data) {
         </div>
         ${bodyHtml}
       </div>
+    `;
+  }).join("");
+
+  renderIndividualTransactionsList(data.transactions || []);
+}
+
+function renderIndividualTransactionsList(txList) {
+  const panel = document.getElementById("individual-transactions-panel");
+  const tbody = document.getElementById("individual-transactions-tbody");
+  if (!panel || !tbody) return;
+
+  if (!txList || txList.length === 0) {
+    panel.classList.add("hidden");
+    tbody.innerHTML = "";
+    return;
+  }
+
+  panel.classList.remove("hidden");
+  tbody.innerHTML = txList.map(tx => {
+    const isBuy = tx.tx_type === "BUY";
+    const typeBadge = isBuy
+      ? `<span class="px-2 py-0.5 rounded bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 font-bold text-[10px]">COMPRA</span>`
+      : `<span class="px-2 py-0.5 rounded bg-amber-500/15 text-amber-400 border border-amber-500/30 font-bold text-[10px]">VENDA</span>`;
+    const totalVal = (Number(tx.quantity) || 0) * (Number(tx.unit_price) || 0);
+    return `
+      <tr class="hover:bg-slate-800/50 transition">
+        <td class="py-2.5 px-3 font-mono text-slate-300">${tx.tx_date}</td>
+        <td class="py-2.5 px-3 font-bold text-white">${tx.ticker} <span class="text-[10px] text-slate-400 font-normal">(${tx.broker || "Corretora"})</span></td>
+        <td class="py-2.5 px-3">${typeBadge}</td>
+        <td class="py-2.5 px-3 text-right font-mono font-bold text-slate-100">${tx.quantity}</td>
+        <td class="py-2.5 px-3 text-right font-mono text-slate-300">${fmtMoney(tx.unit_price, tx.currency || "BRL")}</td>
+        <td class="py-2.5 px-3 text-right font-mono font-bold text-white">${fmtMoney(totalVal, tx.currency || "BRL")}</td>
+        <td class="py-2.5 px-3 text-center">
+          <button onclick="deleteIndividualTransaction(${tx.id}, event)" class="px-2.5 py-1 rounded-lg bg-rose-500/15 hover:bg-rose-500/30 text-rose-400 text-xs font-bold border border-rose-500/30 transition" title="Excluir apenas este lançamento">
+            🗑️ Excluir Ordem
+          </button>
+        </td>
+      </tr>
     `;
   }).join("");
 }
@@ -761,7 +882,8 @@ function switchMainTab(tabKey) {
   } else {
     STATE.marketClass = tabKey;
     document.getElementById("view-MARKET_CLASS").classList.remove("hidden");
-    document.getElementById("market-class-title").textContent = CLASS_NAMES[tabKey] || "Explorador de Ativos";
+    const iconHtml = CLASS_ICONS[tabKey] ? `<span class="mr-2 inline-flex items-center align-middle">${CLASS_ICONS[tabKey]}</span>` : "";
+    document.getElementById("market-class-title").innerHTML = `${iconHtml}${CLASS_NAMES[tabKey] || "Explorador de Ativos"}`;
     loadMarketClassAssets();
   }
 }
@@ -804,6 +926,9 @@ async function loadMarketClassAssets() {
     const heldBadge = a.in_portfolio
       ? `<span class="px-2 py-0.5 rounded-md text-[10px] font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">Na Carteira (${a.user_qty})</span>`
       : "";
+    const removeCardBtn = a.in_portfolio
+      ? `<button onclick="deleteVariablePosition('${a.ticker}', event)" class="px-2 py-0.5 rounded-md text-[10px] font-bold bg-rose-500/15 hover:bg-rose-500/30 text-rose-400 border border-rose-500/30 transition" title="Remover ${a.ticker} da carteira">🗑️ Excluir</button>`
+      : "";
     const divPerShareBadge = a.last_dividend_per_share > 0
       ? `<span class="text-emerald-400 font-bold">${fmtMoney(a.last_dividend_per_share, a.currency)} / cota</span>`
       : `<span class="text-slate-500">—</span>`;
@@ -813,9 +938,10 @@ async function loadMarketClassAssets() {
         <div>
           <div class="flex items-start justify-between gap-2">
             <div>
-              <div class="flex items-center gap-2">
+              <div class="flex flex-wrap items-center gap-1.5">
                 <span class="text-lg font-black text-white group-hover:text-emerald-400 transition">${a.ticker}</span>
                 ${heldBadge}
+                ${removeCardBtn}
               </div>
               <p class="text-xs text-slate-400 truncate max-w-[210px]">${a.name}</p>
             </div>
@@ -883,6 +1009,16 @@ async function openAssetDetail(ticker, period = "1M", keepTabHistory = false) {
   document.getElementById("btn-detail-buy").onclick = () => {
     openTransactionModal(a.ticker, a.asset_class, a.last_price, a.currency);
   };
+
+  const detailDelBtn = document.getElementById("btn-detail-delete");
+  if (detailDelBtn) {
+    if (data.user_position && data.user_position.has_position) {
+      detailDelBtn.classList.remove("hidden");
+      detailDelBtn.onclick = (ev) => deleteVariablePosition(a.ticker, ev);
+    } else {
+      detailDelBtn.classList.add("hidden");
+    }
+  }
 
   setDetailHeaderReadout(
     a.last_price,
@@ -1369,7 +1505,7 @@ function renderFixedIncomeView(fiList) {
             <h3 class="font-bold text-base text-white mt-1.5">${f.title_name}</h3>
             <p class="text-xs text-slate-400">${f.issuer} · Venc: ${f.maturity_date}</p>
           </div>
-          <button onclick="deleteFixedIncome(${f.id})" title="Remover" class="text-slate-500 hover:text-rose-400 text-xs">🗑️</button>
+          <button onclick="deleteFixedIncome(${f.id}, event)" title="Remover" class="px-2.5 py-1 rounded-lg bg-rose-500/15 hover:bg-rose-500/30 text-rose-400 text-xs font-bold border border-rose-500/30 transition shrink-0">🗑️ Excluir</button>
         </div>
         <div class="grid grid-cols-2 gap-2 mt-4 pt-3 border-t border-slate-800 text-xs">
           <div>
@@ -1520,15 +1656,39 @@ async function submitTransaction() {
   await refreshAll();
 }
 
-async function deleteVariablePosition(ticker) {
-  if (!confirm(`Deseja remover ${ticker} da sua carteira?`)) return;
+let _toastTimer = null;
+function showToast(msg) {
+  const el = document.getElementById("toast-notification");
+  const txt = document.getElementById("toast-text");
+  if (!el || !txt) return;
+  txt.textContent = msg;
+  el.classList.remove("hidden");
+  el.classList.add("flex");
+  if (_toastTimer) clearTimeout(_toastTimer);
+  _toastTimer = setTimeout(() => {
+    el.classList.add("hidden");
+    el.classList.remove("flex");
+  }, 3500);
+}
+
+async function deleteVariablePosition(ticker, ev) {
+  if (ev && ev.stopPropagation) ev.stopPropagation();
   await fetch(`/api/portfolio/position/${encodeURIComponent(ticker)}`, { method: "DELETE" });
+  showToast(`Ativo ${ticker} removido da sua carteira.`);
+  await refreshAll();
+}
+
+async function deleteIndividualTransaction(txId, ev) {
+  if (ev && ev.stopPropagation) ev.stopPropagation();
+  await fetch(`/api/transactions/${txId}`, { method: "DELETE" });
+  showToast("Ordem / lançamento excluído da carteira.");
   await refreshAll();
 }
 
 async function clearEntirePortfolio() {
   if (!confirm("Tem certeza que deseja zerar todos os investimentos da sua carteira?")) return;
   await fetch("/api/portfolio/clear", { method: "POST" });
+  showToast("Carteira zerada com sucesso.");
   await refreshAll();
 }
 
@@ -1648,9 +1808,10 @@ async function submitFixedIncome() {
   await refreshAll();
 }
 
-async function deleteFixedIncome(id) {
-  if (!confirm("Deseja remover este título/caixinha da sua carteira?")) return;
+async function deleteFixedIncome(id, ev) {
+  if (ev && ev.stopPropagation) ev.stopPropagation();
   await fetch(`/api/fixed-income/${id}`, { method: "DELETE" });
+  showToast("Título / Caixinha removido da sua carteira.");
   await refreshAll();
 }
 
