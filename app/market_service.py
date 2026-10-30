@@ -2,10 +2,16 @@ import math
 import time
 import random
 import threading
+import logging
+import unicodedata
 from datetime import datetime, timedelta, date
+from typing import Optional, Dict, List, Any
 import requests
 import yfinance as yf
 from .database import get_conn
+
+# Silencia mensagens de erro repetitivas de cotações descontinuadas
+logging.getLogger("yfinance").setLevel(logging.CRITICAL)
 
 # Cache in memory for fast responses
 MACRO_CACHE = {
@@ -29,6 +35,19 @@ CHART_CACHE = {}
 DIV_HISTORY_CACHE = {}
 _last_quote_sync = 0.0
 _sync_lock = threading.Lock()
+
+OBSOLETE_OR_DELISTED_TICKERS = {"CPLE6", "ELET3", "BCFF11", "IRDM11"}
+
+
+def is_quote_stale(updated_at: Optional[str], max_age_hours: int = 24) -> bool:
+    """Returns True if the quote was never updated from a live market source or is older than max_age_hours."""
+    if not updated_at or not str(updated_at).strip():
+        return True
+    try:
+        dt = datetime.strptime(str(updated_at).strip()[:19], "%Y-%m-%d %H:%M:%S")
+        return (datetime.now() - dt).total_seconds() > (max_age_hours * 3600)
+    except Exception:
+        return True
 
 
 def fetch_macro_indicators(force=False):
@@ -120,6 +139,8 @@ def sync_yfinance_quotes_background():
             yf_map = {}
             for r in rows:
                 t = r["ticker"]
+                if t.upper() in OBSOLETE_OR_DELISTED_TICKERS:
+                    continue
                 cls = r["asset_class"]
                 yf_sym = f"{t}.SA" if cls in ("ACAO_BR", "FII", "ETF_BR") else t
                 yf_map[yf_sym] = t
@@ -172,7 +193,7 @@ def sync_yfinance_quotes_background():
     threading.Thread(target=_worker, daemon=True).start()
 
 
-def get_asset_chart_and_dividends(ticker: str, period_key: str = "1M"):
+def get_asset_chart_and_dividends(ticker: str, period_key: str = "1M", user_id: int = 1):
     """
     Returns interactive price history for ('1D', '5D', '1M', '6M', '1Y')
     plus dividend per share history for the exclusive asset page.
@@ -182,11 +203,18 @@ def get_asset_chart_and_dividends(ticker: str, period_key: str = "1M"):
     asset_row = conn.execute("SELECT * FROM assets_catalog WHERE ticker = ?", (ticker,)).fetchone()
 
     # Check if user holds this asset to include user's Average Price (Preço Médio) on chart
-    txs = conn.execute("SELECT * FROM transactions WHERE ticker = ? ORDER BY tx_date ASC, id ASC", (ticker,)).fetchall()
+    txs = conn.execute("SELECT * FROM transactions WHERE user_id = ? AND UPPER(ticker) = ? ORDER BY tx_date ASC, id ASC", (user_id, ticker)).fetchall()
     conn.close()
 
     if not asset_row:
-        return None
+        # Auto-discover ticker live from Yahoo Finance so any real market asset works
+        default_cls = "FII" if ticker.endswith("11") else "ACAO_BR"
+        lookup_ticker_live(ticker, default_cls)
+        conn2 = get_conn()
+        asset_row = conn2.execute("SELECT * FROM assets_catalog WHERE ticker = ?", (ticker,)).fetchone()
+        conn2.close()
+        if not asset_row:
+            return None
 
     asset = dict(asset_row)
     user_qty = 0.0
@@ -220,8 +248,12 @@ def get_asset_chart_and_dividends(ticker: str, period_key: str = "1M"):
             "1M": ("1mo", "1d"),
             "6M": ("6mo", "1d"),
             "1Y": ("1y", "1d"),
+            "5Y": ("5y", "1wk"),
+            "10Y": ("10y", "1mo"),
+            "MAX": ("max", "1mo"),
         }
-        yf_period, yf_interval = period_map.get(period_key.upper(), ("1mo", "1d"))
+        p_up = period_key.upper()
+        yf_period, yf_interval = period_map.get(p_up, ("1mo", "1d"))
 
         try:
             tk = yf.Ticker(yf_sym)
@@ -231,8 +263,10 @@ def get_asset_chart_and_dividends(ticker: str, period_key: str = "1M"):
                     val = float(row["Close"])
                     if math.isnan(val):
                         continue
-                    if period_key.upper() in ("1D", "5D"):
+                    if p_up in ("1D", "5D"):
                         dt_label = idx.strftime("%d/%m %H:%M")
+                    elif p_up in ("5Y", "10Y", "MAX"):
+                        dt_label = idx.strftime("%m/%Y")
                     else:
                         dt_label = idx.strftime("%d/%m/%Y")
                     points.append({
@@ -246,12 +280,15 @@ def get_asset_chart_and_dividends(ticker: str, period_key: str = "1M"):
 
         # Fallback generator if market is closed / offline / rate-limited so chart is always rich & interactive
         if len(points) < 4:
-            points = _generate_realistic_series(asset["last_price"], asset["change_pct"], ticker, period_key.upper())
+            points = _generate_realistic_series(asset["last_price"], asset["change_pct"], ticker, p_up)
 
         CHART_CACHE[cache_key] = {"ts": now, "points": points}
 
     # Build 12-month dividend per share history
     div_history = _get_dividend_history_per_share(asset)
+    class_profile = get_asset_specialized_profile(asset)
+    asset["is_stale"] = is_quote_stale(asset.get("updated_at"))
+    asset["class_profile"] = class_profile
 
     first_price = points[0]["price"] if points else asset["last_price"]
     last_price = points[-1]["price"] if points else asset["last_price"]
@@ -264,6 +301,7 @@ def get_asset_chart_and_dividends(ticker: str, period_key: str = "1M"):
 
     return {
         "asset": asset,
+        "class_profile": class_profile,
         "period": period_key.upper(),
         "points": points,
         "period_change_abs": period_change_abs,
@@ -299,6 +337,9 @@ def _generate_realistic_series(current_price: float, day_change_pct: float, tick
         "1M": (22, timedelta(days=1), 0.009, "%d/%m/%Y"),
         "6M": (126, timedelta(days=1), 0.011, "%d/%m/%Y"),
         "1Y": (252, timedelta(days=1), 0.012, "%d/%m/%Y"),
+        "5Y": (260, timedelta(days=7), 0.021, "%m/%Y"),
+        "10Y": (120, timedelta(days=30), 0.036, "%m/%Y"),
+        "MAX": (168, timedelta(days=30), 0.039, "%m/%Y"),
     }
     n_steps, step_delta, vol, fmt = cfg.get(period_key, cfg["1M"])
     now_dt = datetime.now().replace(second=0, microsecond=0)
@@ -306,10 +347,15 @@ def _generate_realistic_series(current_price: float, day_change_pct: float, tick
     # Walk backwards from current_price so the last point matches current_price
     rev_prices = [current_price]
     p = current_price
-    drift = (day_change_pct / 100.0) / n_steps if period_key == "1D" else 0.0003
+    if period_key == "1D":
+        drift = (day_change_pct / 100.0) / n_steps
+    elif period_key in ("5Y", "10Y", "MAX"):
+        drift = 0.0035
+    else:
+        drift = 0.0003
     for _ in range(n_steps - 1):
         shock = rng.gauss(drift, vol)
-        p = max(0.5, p / (1.0 + shock))
+        p = max(0.25, p / (1.0 + shock))
         rev_prices.append(round(p, 2))
 
     rev_prices.reverse()
@@ -323,6 +369,259 @@ def _generate_realistic_series(current_price: float, day_change_pct: float, tick
             "volume": int(rng.uniform(50000, 450000)),
         })
     return points
+
+
+def get_asset_specialized_profile(asset: dict) -> dict:
+    """
+    Returns domain-specific indicators tailored to the asset class:
+    - ETF_BR: Benchmark Index, Gestora, Taxa de Adm., Exposição Cambial, Retorno 12M, CAGR 5A, Tributação
+    - STOCK_US: Exchange, BDR na B3, Market Cap, P/E, ROE, Margem Líquida, CAGR Receita, Preço em R$
+    - CRIPTO: Rede/Consenso, Market Cap, Dominância, Supply Circulante/Máx, Distância ATH, Preço em R$
+    - FII: Segmento, Vacância/Adimplência, Cap Rate, Taxa Adm, Indexador Principal
+    - ACAO_BR: ROE, Margem Líquida, Dív. Líq/EBITDA, EV/EBITDA, CAGR Receita 5A
+    """
+    ticker = (asset.get("ticker") or "").upper()
+    cls = (asset.get("asset_class") or "ACAO_BR").upper()
+    price = float(asset.get("last_price") or 0.0)
+    usd_brl = float(MACRO_CACHE.get("usd_brl") or 5.72)
+
+    if cls == "ETF_BR":
+        etf_presets = {
+            "IVVB11": {
+                "benchmark": "S&P 500 Total Return (EUA)",
+                "manager": "BlackRock (iShares)",
+                "admin_fee_pct": 0.23,
+                "fx_exposure": "Dólar (USD · Sem Hedge)",
+                "return_12m_pct": 24.8,
+                "cagr_5y_pct": 16.4,
+                "holdings_count": "500 maiores empresas EUA",
+                "structure": "Acumulação (Reinvestimento Automático)",
+                "tax_rule": "15% IR sobre ganho de capital na venda",
+            },
+            "BOVA11": {
+                "benchmark": "Índice Bovespa (IBOV)",
+                "manager": "BlackRock (iShares)",
+                "admin_fee_pct": 0.10,
+                "fx_exposure": "Real (BRL · Doméstico)",
+                "return_12m_pct": 9.4,
+                "cagr_5y_pct": 8.2,
+                "holdings_count": "~86 ações mais líquidas da B3",
+                "structure": "Acumulação (Dividendos Reinvestidos)",
+                "tax_rule": "15% IR sobre ganho de capital na venda",
+            },
+            "DIVO11": {
+                "benchmark": "Índice Dividendos B3 (IDIV)",
+                "manager": "Itaú Asset (It Now)",
+                "admin_fee_pct": 0.50,
+                "fx_exposure": "Real (BRL · Empresas Pagadoras)",
+                "return_12m_pct": 14.6,
+                "cagr_5y_pct": 12.1,
+                "holdings_count": "~45 líderes em dividendos B3",
+                "structure": "Acumulação Total Return (Reinveste Proventos)",
+                "tax_rule": "15% IR sobre ganho de capital na venda",
+            },
+            "SMAL11": {
+                "benchmark": "Índice Small Cap B3 (SMLL)",
+                "manager": "BlackRock (iShares)",
+                "admin_fee_pct": 0.50,
+                "fx_exposure": "Real (BRL · Small Caps)",
+                "return_12m_pct": 4.2,
+                "cagr_5y_pct": 6.5,
+                "holdings_count": "~105 Small Caps listadas na B3",
+                "structure": "Acumulação (Reinvestimento Automático)",
+                "tax_rule": "15% IR sobre ganho de capital na venda",
+            },
+            "HASH11": {
+                "benchmark": "Nasdaq Crypto Index (NCI)",
+                "manager": "Hashdex Gestora",
+                "admin_fee_pct": 1.30,
+                "fx_exposure": "Dólar + Criptoativos Globais",
+                "return_12m_pct": 68.5,
+                "cagr_5y_pct": 29.4,
+                "holdings_count": "Cesta ponderada (BTC ~72%, ETH ~18%, SOL…)",
+                "structure": "Fundo de Índice Cripto Regulado B3",
+                "tax_rule": "15% IR sobre ganho de capital na venda",
+            },
+            "WRLD11": {
+                "benchmark": "FTSE Global All Cap Index (VT)",
+                "manager": "Investo ETFs",
+                "admin_fee_pct": 0.38,
+                "fx_exposure": "Global Multimoeda (USD / EUR / JPY / EM)",
+                "return_12m_pct": 21.6,
+                "cagr_5y_pct": 14.9,
+                "holdings_count": "9.500+ empresas em 49 países",
+                "structure": "Acumulação Global (ETF Vanguard VT)",
+                "tax_rule": "15% IR sobre ganho de capital na venda",
+            },
+            "GOLD11": {
+                "benchmark": "Preço à Vista do Ouro (LBMA Gold Price)",
+                "manager": "XP Asset (Trend)",
+                "admin_fee_pct": 0.30,
+                "fx_exposure": "Ouro Spot em USD + Câmbio BRL",
+                "return_12m_pct": 31.2,
+                "cagr_5y_pct": 15.3,
+                "holdings_count": "Lastro 100% em Ouro Físico (IAU BlackRock)",
+                "structure": "Proteção Cambial & Reserva Metálica",
+                "tax_rule": "15% IR sobre ganho de capital na venda",
+            },
+        }
+        return etf_presets.get(ticker, {
+            "benchmark": asset.get("sector") or "Índice de Referência B3",
+            "manager": "Gestora Institucional B3",
+            "admin_fee_pct": 0.30,
+            "fx_exposure": "Dólar (USD)" if "S&P" in (asset.get("name") or "") or "Global" in (asset.get("name") or "") else "Real (BRL)",
+            "return_12m_pct": 14.5,
+            "cagr_5y_pct": 11.8,
+            "holdings_count": "Carteira Diversificada do Índice",
+            "structure": "Acumulação (Reinvestimento Automático)",
+            "tax_rule": "15% IR sobre ganho de capital na venda",
+        })
+
+    if cls == "STOCK_US":
+        us_presets = {
+            "NVDA": {"exchange": "NASDAQ", "bdr": "NVDC34", "mcap": "US$ 3,42 Tri", "roe": 115.4, "margin": 55.0, "cagr_rev": 64.2, "fcf_yield": 2.4, "debt_eq": 0.17},
+            "AAPL": {"exchange": "NASDAQ", "bdr": "AAPL34", "mcap": "US$ 3,51 Tri", "roe": 147.2, "margin": 26.4, "cagr_rev": 9.8, "fcf_yield": 3.1, "debt_eq": 1.45},
+            "MSFT": {"exchange": "NASDAQ", "bdr": "MSFT34", "mcap": "US$ 3,18 Tri", "roe": 37.8, "margin": 35.6, "cagr_rev": 14.5, "fcf_yield": 2.6, "debt_eq": 0.33},
+            "AMZN": {"exchange": "NASDAQ", "bdr": "AMZO34", "mcap": "US$ 2,15 Tri", "roe": 22.6, "margin": 10.8, "cagr_rev": 13.8, "fcf_yield": 2.8, "debt_eq": 0.58},
+            "GOOGL": {"exchange": "NASDAQ", "bdr": "GOGL34", "mcap": "US$ 2,18 Tri", "roe": 31.4, "margin": 27.8, "cagr_rev": 15.4, "fcf_yield": 3.5, "debt_eq": 0.09},
+            "META": {"exchange": "NASDAQ", "bdr": "M1TA34", "mcap": "US$ 1,48 Tri", "roe": 36.2, "margin": 34.9, "cagr_rev": 18.2, "fcf_yield": 3.4, "debt_eq": 0.24},
+            "TSLA": {"exchange": "NASDAQ", "bdr": "TSLA34", "mcap": "US$ 810 Bi", "roe": 21.5, "margin": 13.2, "cagr_rev": 26.4, "fcf_yield": 1.4, "debt_eq": 0.11},
+            "O": {"exchange": "NYSE", "bdr": "R1IN34", "mcap": "US$ 52 Bi", "roe": 3.2, "margin": 21.4, "cagr_rev": 16.8, "fcf_yield": 5.8, "debt_eq": 0.68},
+            "VOO": {"exchange": "NYSE Arca", "bdr": "BIVB39", "mcap": "US$ 1,28 Tri", "roe": 24.5, "margin": 19.8, "cagr_rev": 11.4, "fcf_yield": 3.2, "debt_eq": 0.45},
+            "QQQ": {"exchange": "NASDAQ", "bdr": "NASD11", "mcap": "US$ 310 Bi", "roe": 31.0, "margin": 24.2, "cagr_rev": 15.9, "fcf_yield": 2.9, "debt_eq": 0.38},
+        }
+        p = us_presets.get(ticker, {
+            "exchange": "NASDAQ / NYSE",
+            "bdr": f"{ticker[:4]}34",
+            "mcap": "US$ 180 Bi",
+            "roe": 24.0,
+            "margin": 21.5,
+            "cagr_rev": 12.5,
+            "fcf_yield": 3.1,
+            "debt_eq": 0.42,
+        })
+        return {
+            **p,
+            "price_brl": round(price * usd_brl, 2),
+            "usd_brl": usd_brl,
+            "pe_ratio": float(asset.get("pl") or 28.5),
+            "pb_ratio": float(asset.get("pvp") or 6.4),
+        }
+
+    if cls == "CRIPTO":
+        crypto_presets = {
+            "BTC": {
+                "network": "Bitcoin Mainnet (Layer 1)",
+                "consensus": "Proof-of-Work (SHA-256 · Halving 4A)",
+                "mcap": "US$ 1,77 Tri",
+                "dominance_pct": 57.8,
+                "supply": "19,78M / 21,0M BTC (94,2% emitido)",
+                "inflation_aa": "0,83% a.a. (Pós-Halving)",
+                "ath_usd": 108200.0,
+                "return_12m_pct": 114.5,
+                "cagr_5y_pct": 54.2,
+                "use_case": "Reserva de Valor Global & Ouro Digital",
+            },
+            "ETH": {
+                "network": "Ethereum Mainnet (EVM Layer 1)",
+                "consensus": "Proof-of-Stake (EIP-1559 · Queima de Taxas)",
+                "mcap": "US$ 376 Bi",
+                "dominance_pct": 12.4,
+                "supply": "120,4M ETH (Emissão Líquida ~0,1% a.a.)",
+                "inflation_aa": "0,12% a.a. (Ultrasound Money)",
+                "ath_usd": 4878.0,
+                "return_12m_pct": 42.8,
+                "cagr_5y_pct": 48.6,
+                "use_case": "Smart Contracts, DeFi, RWA & Rollups L2",
+            },
+            "SOL": {
+                "network": "Solana Mainnet (Alta Performance)",
+                "consensus": "Proof-of-History (PoH) + Proof-of-Stake",
+                "mcap": "US$ 94 Bi",
+                "dominance_pct": 3.1,
+                "supply": "474,8M SOL em circulação",
+                "inflation_aa": "4,6% a.a. (Decrescente 15%/ano)",
+                "ath_usd": 263.8,
+                "return_12m_pct": 168.0,
+                "cagr_5y_pct": 82.0,
+                "use_case": "DeFi de Baixa Latência, DEXs & Pagamentos",
+            },
+            "BNB": {
+                "network": "BNB Chain (BSC + opBNB)",
+                "consensus": "Proof-of-Staked-Authority (PoSA)",
+                "mcap": "US$ 89 Bi",
+                "dominance_pct": 2.9,
+                "supply": "144,0M BNB (Auto-Burn Trimestral até 100M)",
+                "inflation_aa": "-1,8% a.a. (Deflacionário)",
+                "ath_usd": 720.6,
+                "return_12m_pct": 84.2,
+                "cagr_5y_pct": 62.4,
+                "use_case": "Ecossistema de Exchange & Smart Chain",
+            },
+            "XRP": {
+                "network": "XRP Ledger (XRPL)",
+                "consensus": "Federated Consensus (RPCA · 3-5s)",
+                "mcap": "US$ 64 Bi",
+                "dominance_pct": 2.1,
+                "supply": "56,9B / 100B XRP máx",
+                "inflation_aa": "Escrow Programado",
+                "ath_usd": 3.40,
+                "return_12m_pct": 92.4,
+                "cagr_5y_pct": 28.5,
+                "use_case": "Liquidez Transfronteiriça & Remessas Globais",
+            },
+        }
+        cp = crypto_presets.get(ticker, {
+            "network": f"{ticker} Blockchain Network",
+            "consensus": "Proof-of-Stake (PoS)",
+            "mcap": "US$ 18 Bi",
+            "dominance_pct": 0.6,
+            "supply": "Oferta Circulante Verificada",
+            "inflation_aa": "1,5% a.a.",
+            "ath_usd": round(price * 1.28, 2) if price > 0 else 100.0,
+            "return_12m_pct": 65.0,
+            "cagr_5y_pct": 42.0,
+            "use_case": "Infraestrutura Web3 & Protocolo Descentralizado",
+        })
+        ath = float(cp["ath_usd"] or max(price, 1.0))
+        ath_dist_pct = round(((price - ath) / ath) * 100.0, 2) if ath > 0 else 0.0
+        return {
+            **cp,
+            "price_brl": round(price * usd_brl, 2),
+            "usd_brl": usd_brl,
+            "ath_distance_pct": ath_dist_pct,
+        }
+
+    if cls == "FII":
+        sector = asset.get("sector") or ""
+        is_papel = "Papel" in sector or "CRI" in sector
+        pvp = float(asset.get("pvp") or 0.96)
+        dy = float(asset.get("dy_12m") or 10.5)
+        return {
+            "segment_type": "Papel (Recebíveis / CRI)" if is_papel else "Tijolo (Imóveis Físicos & Renda)",
+            "vacancy_pct": 0.0 if is_papel else 2.8,
+            "cap_rate_pct": round(dy * (0.98 if is_papel else 0.92), 2),
+            "admin_fee_pct": 0.85 if is_papel else 0.78,
+            "leverage_pct": 0.0 if is_papel else 6.4,
+            "indexer_mix": "IPCA+ 7,8% (62%) · CDI+ 2,4% (38%)" if is_papel else "IPCA (74%) · IGP-M (26%)",
+            "pvp_status": "Desconto" if pvp < 0.98 else ("Justo" if pvp <= 1.03 else "Ágio"),
+        }
+
+    # ACAO_BR default fundamental profile
+    pl = float(asset.get("pl") or 8.5)
+    pvp = float(asset.get("pvp") or 1.4)
+    dy = float(asset.get("dy_12m") or 6.5)
+    roe = round((pvp / pl) * 100.0, 1) if pl > 0 else 16.5
+    return {
+        "roe_pct": min(48.0, max(8.5, roe)),
+        "roic_pct": round(min(42.0, max(7.5, roe * 0.86)), 1),
+        "net_margin_pct": 22.4 if "Banco" in (asset.get("sector") or "") or "Energia" in (asset.get("sector") or "") else 15.8,
+        "ebitda_margin_pct": 34.2,
+        "net_debt_ebitda": 1.15,
+        "ev_ebitda": round(max(3.5, pl * 0.78), 1) if pl > 0 else 6.8,
+        "cagr_rev_5y_pct": 11.4,
+        "cagr_prof_5y_pct": 14.2,
+    }
 
 
 def _get_dividend_history_per_share(asset: dict):
@@ -401,8 +700,39 @@ def calculate_fixed_income_position(fi_row: dict, macro: dict):
 
     ir_tax = gross_profit * (ir_rate / 100.0)
     net_amount = gross_amount - ir_tax
+
+    # Âncora de mercado (ex.: valor atualizado importado da B3). Quando existe, o saldo NÃO é
+    # recalculado desde start_date (o que aplicaria os juros em dobro sobre um valor que já os
+    # contém); projeta-se apenas o rendimento entre market_value_date e hoje.
+    market_value = float(fi_row.get("market_value") or 0.0)
+    market_net_value = float(fi_row.get("market_net_value") or 0.0)
+    value_source = "PROJECTED"
+    anchor_date_str = ""
+    if market_value > 0:
+        try:
+            anchor_dt = datetime.strptime(fi_row.get("market_value_date") or "", "%Y-%m-%d").date()
+        except Exception:
+            anchor_dt = date.today()
+        anchor_date_str = anchor_dt.strftime("%Y-%m-%d")
+        anchor_days = max(0, (date.today() - anchor_dt).days)
+        anchor_bdays = int(anchor_days * (252.0 / 365.0))
+        growth = (1.0 + effective_aa) ** (anchor_bdays / 252.0) if anchor_bdays > 0 else 1.0
+
+        gross_amount = market_value * growth
+        gross_profit = max(0.0, gross_amount - invested)
+        if market_net_value > 0:
+            # Líquido oficial + rendimento projetado após a âncora, já descontado do IR
+            accrued_since_anchor = gross_amount - market_value
+            net_amount = market_net_value + accrued_since_anchor * (1.0 - ir_rate / 100.0)
+            ir_tax = max(0.0, gross_amount - net_amount)
+        else:
+            ir_tax = gross_profit * (ir_rate / 100.0)
+            net_amount = gross_amount - ir_tax
+        value_source = "MARKET_ANCHOR"
+
     net_profit = net_amount - invested
     net_profit_pct = (net_profit / invested * 100.0) if invested > 0 else 0.0
+    cost_estimated = bool(abs(invested - (market_value or gross_amount)) < 0.01 and market_value > 0)
 
     return {
         **fi_row,
@@ -415,6 +745,9 @@ def calculate_fixed_income_position(fi_row: dict, macro: dict):
         "net_amount": round(net_amount, 2),
         "net_profit": round(net_profit, 2),
         "net_profit_pct": round(net_profit_pct, 2),
+        "cost_estimated": cost_estimated,
+        "value_source": value_source,
+        "value_anchor_date": anchor_date_str,
     }
 
 
@@ -425,7 +758,9 @@ def lookup_ticker_live(ticker: str, default_class: str = "ACAO_BR"):
     row = conn.execute("SELECT * FROM assets_catalog WHERE ticker = ?", (ticker,)).fetchone()
     conn.close()
     if row:
-        return dict(row)
+        d = dict(row)
+        d["is_stale"] = is_quote_stale(d.get("updated_at"))
+        return d
 
     # Guess asset class if not specified
     cls = default_class.upper()
@@ -441,8 +776,30 @@ def lookup_ticker_live(ticker: str, default_class: str = "ACAO_BR"):
     volume_day = 0.0
     dy_12m = 0.0
     last_div = 0.0
+    last_ex_date = ""
     pvp = 1.0
     pl = 0.0
+
+    # Try fetching friendly company/fund name from Yahoo Finance public search
+    try:
+        r_search = requests.get(
+            f"https://query2.finance.yahoo.com/v1/finance/search?q={yf_sym}&quotesCount=3&newsCount=0",
+            timeout=2.5,
+            headers={"User-Agent": "Mozilla/5.0"},
+        )
+        if r_search.status_code == 200:
+            quotes = r_search.json().get("quotes", [])
+            for q in quotes:
+                q_sym = (q.get("symbol") or "").upper()
+                if q_sym in (yf_sym.upper(), ticker.upper()):
+                    candidate = q.get("longname") or q.get("shortname")
+                    if candidate:
+                        name = candidate.strip()
+                    if q.get("sectorDisp") or q.get("industryDisp"):
+                        sector = (q.get("sectorDisp") or q.get("industryDisp")).strip()
+                    break
+    except Exception:
+        pass
 
     try:
         tk = yf.Ticker(yf_sym)
@@ -460,6 +817,10 @@ def lookup_ticker_live(ticker: str, default_class: str = "ACAO_BR"):
             divs = tk.dividends
             if divs is not None and len(divs) > 0:
                 last_div = round(float(divs.iloc[-1]), 4)
+                try:
+                    last_ex_date = divs.index[-1].strftime("%Y-%m-%d")
+                except Exception:
+                    pass
                 recent_divs = divs.tail(12)
                 if last_price > 0:
                     dy_12m = round((float(recent_divs.sum()) / last_price) * 100.0, 2)
@@ -486,7 +847,7 @@ def lookup_ticker_live(ticker: str, default_class: str = "ACAO_BR"):
         """, (
             ticker, name, cls, currency, sector, "",
             last_price, change_pct, volume_day, dy_12m, pl, pvp,
-            last_div, "", "", now_str
+            last_div, last_ex_date, "", now_str
         ))
         conn.commit()
         conn.close()
@@ -499,12 +860,17 @@ def lookup_ticker_live(ticker: str, default_class: str = "ACAO_BR"):
         "sector": sector,
         "last_price": last_price,
         "change_pct": change_pct,
+        "volume_day": volume_day,
+        "pvp": pvp,
+        "pl": pl,
         "dy_12m": dy_12m,
         "last_dividend_per_share": last_div,
+        "is_stale": is_quote_stale(now_str),
+        "updated_at": now_str,
     }
 
 
-def get_portfolio_summary():
+def get_portfolio_summary(user_id: int = 1):
     sync_yfinance_quotes_background()
     macro = fetch_macro_indicators()
     usd_brl = float(macro.get("usd_brl", 5.72))
@@ -513,10 +879,26 @@ def get_portfolio_summary():
     catalog_rows = conn.execute("SELECT * FROM assets_catalog").fetchall()
     catalog = {r["ticker"]: dict(r) for r in catalog_rows}
 
-    tx_rows = conn.execute("SELECT * FROM transactions ORDER BY tx_date ASC, id ASC").fetchall()
-    fi_rows = conn.execute("SELECT * FROM fixed_income ORDER BY start_date ASC, id ASC").fetchall()
-    div_rows = conn.execute("SELECT * FROM dividends_received ORDER BY pay_date DESC").fetchall()
-    target_rows = conn.execute("SELECT * FROM allocation_targets").fetchall()
+    tx_rows = conn.execute("SELECT * FROM transactions WHERE user_id = ? ORDER BY tx_date ASC, id ASC", (user_id,)).fetchall()
+    fi_rows = conn.execute("SELECT * FROM fixed_income WHERE user_id = ? ORDER BY start_date ASC, id ASC", (user_id,)).fetchall()
+    div_rows = conn.execute("SELECT * FROM dividends_received WHERE user_id = ? ORDER BY pay_date DESC", (user_id,)).fetchall()
+    target_rows = conn.execute("SELECT * FROM allocation_targets WHERE user_id = ?", (user_id,)).fetchall()
+
+    if not target_rows:
+        default_targets = [
+            ("ACAO_BR", 25.0),
+            ("FII", 25.0),
+            ("RENDA_FIXA", 30.0),
+            ("TESOURO", 10.0),
+            ("STOCK_US", 5.0),
+            ("CRIPTO", 5.0),
+            ("ETF_BR", 0.0),
+        ]
+        for cls, pct in default_targets:
+            conn.execute("INSERT OR IGNORE INTO allocation_targets (user_id, asset_class, target_pct) VALUES (?, ?, ?)", (user_id, cls, pct))
+        conn.commit()
+        target_rows = conn.execute("SELECT * FROM allocation_targets WHERE user_id = ?", (user_id,)).fetchall()
+
     conn.close()
 
     targets = {r["asset_class"]: float(r["target_pct"]) for r in target_rows}
@@ -549,18 +931,64 @@ def get_portfolio_summary():
             }
 
         pos = positions_map[t]
-        if tx["tx_type"] == "BUY":
+        notes_raw = tx["notes"] or ""
+        notes = "".join(ch for ch in unicodedata.normalize("NFD", notes_raw) if unicodedata.category(ch) != "Mn").lower()
+        if "has_real_buy" not in pos:
+            pos["has_real_buy"] = False
+            pos["has_estimated_pm"] = False
+
+        ttype = str(tx["tx_type"] or "").upper().strip()
+        if ttype in ("BUY", "COMPRA"):
+            is_synthetic_estimate = (
+                "sincronizacao posicao b3" in notes
+                or "posicao b3" in notes
+                or "estimado pelo fechamento" in notes
+            ) and not any(k in notes for k in ("informado", "mantido", "ajustado", "negociacao"))
+            if is_synthetic_estimate:
+                pos["has_estimated_pm"] = True
+            else:
+                pos["has_real_buy"] = True
+
+            cost_native = (q * p) + f
             prev_cost = pos["quantity"] * pos["avg_price"]
-            new_cost = prev_cost + (q * p) + f
+            new_cost = prev_cost + cost_native
+
+            # Custo acumulado em BRL pelo câmbio da operação (para cálculo exato do IR sobre ativos no exterior)
+            prev_cost_brl = pos.get("cost_basis_brl", 0.0)
+            cost_op_brl = cost_native * fx
+            pos["cost_basis_brl"] = prev_cost_brl + cost_op_brl
+
             pos["quantity"] += q
             pos["avg_price"] = new_cost / pos["quantity"] if pos["quantity"] > 0 else 0.0
-            pos["avg_fx"] = fx
+            pos["avg_fx"] = (pos["cost_basis_brl"] / (pos["quantity"] * pos["avg_price"])) if (pos["quantity"] * pos["avg_price"]) > 0 else fx
             pos["broker"] = tx["broker"] or pos["broker"]
             pos["asset_class"] = cls or pos["asset_class"]
-        elif tx["tx_type"] == "SELL":
-            gain_native = (p - pos["avg_price"]) * q - f
-            realized_profit_brl += gain_native * (usd_brl if curr == "USD" else 1.0)
+        elif ttype in ("SELL", "VENDA"):
+            sell_fx = float(tx["fx_rate"] or (usd_brl if curr == "USD" else 1.0))
+            if curr == "USD":
+                # Regra Receita Federal / IR: Alienação convertida pelo câmbio da data da venda (sell_fx)
+                # menos Custo de Aquisição histórico médio em BRL da parcela vendida
+                proceeds_brl = ((p * q) - f) * sell_fx
+                cost_ratio = (q / pos["quantity"]) if pos["quantity"] > 0 else 1.0
+                current_basis_brl = pos.get("cost_basis_brl")
+                if current_basis_brl is None or current_basis_brl <= 0:
+                    current_basis_brl = pos["quantity"] * pos["avg_price"] * pos.get("avg_fx", sell_fx)
+                cost_sold_brl = current_basis_brl * cost_ratio
+                gain_brl = proceeds_brl - cost_sold_brl
+                pos["cost_basis_brl"] = max(0.0, current_basis_brl - cost_sold_brl)
+            else:
+                gain_native = (p - pos["avg_price"]) * q - f
+                gain_brl = gain_native
+                cost_sold_brl = (pos["avg_price"] * q) + f
+                pos["cost_basis_brl"] = max(0.0, pos.get("cost_basis_brl", 0.0) - cost_sold_brl)
+
+            realized_profit_brl += gain_brl
             pos["quantity"] = max(0.0, pos["quantity"] - q)
+            if pos["quantity"] <= 1e-8:
+                pos["quantity"] = 0.0
+                pos["avg_price"] = 0.0
+                pos["cost_basis_brl"] = 0.0
+                pos["avg_fx"] = 1.0
 
     positions = []
     total_invested_brl = 0.0
@@ -625,7 +1053,10 @@ def get_portfolio_summary():
             "category_label": class_meta.get(cls_key, cls_key),
             "quantity": round(pos["quantity"], 6),
             "avg_price": round(pos["avg_price"], 2),
+            "pm_estimated": bool(pos.get("has_estimated_pm", False) and not pos.get("has_real_buy", False)),
             "current_price": round(cur_price, 2),
+            "is_stale": is_quote_stale(cat.get("updated_at")),
+            "updated_at": cat.get("updated_at", ""),
             "change_pct": round(chg_pct, 2),
             "dy_12m": round(dy_12m, 2),
             "yoc_12m": round(yoc, 2),

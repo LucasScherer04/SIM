@@ -8,3 +8,5 @@ env/
 *.sqlite3
 .env
 *.log
+*.key
+.sim_secret.key

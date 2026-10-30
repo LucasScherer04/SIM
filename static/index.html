@@ -1,9 +1,9 @@
 <!DOCTYPE html>
-<html lang="pt-BR" class="dark">
+<html lang="pt-BR" data-theme="dark">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-  <meta name="theme-color" content="#090d16" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <meta name="theme-color" content="#08090b" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   <title>SIM — Scherer Investments Money</title>
@@ -11,892 +11,1280 @@
   <link rel="icon" type="image/x-icon" href="/static/icon.ico" />
   <link rel="icon" type="image/png" sizes="512x512" href="/static/logo.png" />
   <link rel="apple-touch-icon" href="/static/logo.png" />
-  <script src="https://cdn.tailwindcss.com"></script>
-  <script>
-    tailwind.config = {
-      darkMode: 'class',
-      theme: {
-        extend: {
-          colors: {
-            simbg: '#090d16',
-            simcard: '#111827',
-            simborder: '#1f2937',
-            simaccent: '#10b981',
-          }
-        }
-      }
-    }
-  </script>
-  <style>
-    body {
-      background-color: #090d16;
-      color: #f8fafc;
-      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Inter, sans-serif;
-      overflow-x: hidden;
-    }
-    ::-webkit-scrollbar { width: 6px; height: 6px; }
-    ::-webkit-scrollbar-track { background: #090d16; }
-    ::-webkit-scrollbar-thumb { background: #1e293b; border-radius: 3px; }
-    ::-webkit-scrollbar-thumb:hover { background: #334155; }
-    .no-scrollbar::-webkit-scrollbar { display: none; }
-    .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
-    .glass-card {
-      background: rgba(17, 24, 39, 0.86);
-      backdrop-filter: blur(12px);
-      border: 1px solid rgba(255, 255, 255, 0.07);
-    }
-    .tab-active {
-      background: linear-gradient(135deg, rgba(16, 185, 129, 0.18), rgba(5, 150, 105, 0.08));
-      border-color: #10b981 !important;
-      color: #34d399 !important;
-    }
-    .pill-active {
-      background-color: #10b981 !important;
-      color: #052e16 !important;
-      font-weight: 700;
-    }
-  </style>
-</head>
-<body class="min-h-screen flex flex-col pb-20 md:pb-0">
 
-  <!-- 1. TOP LIVE MACRO TICKER TAPE -->
-  <div class="w-full bg-[#060911] border-b border-slate-800/80 px-3 py-2 text-xs flex items-center justify-between overflow-x-auto no-scrollbar whitespace-nowrap gap-6 sticky top-0 z-40">
-    <div class="flex items-center gap-5" id="macro-ticker-bar">
-      <span class="text-slate-400">Carregando indicadores ao vivo...</span>
+  <!-- Tipografia: Geist (UI), Geist Mono (códigos) e Instrument Serif (números de destaque) -->
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Geist:wght@300..800&family=Geist+Mono:wght@400..600&family=Instrument+Serif&display=swap" rel="stylesheet" />
+
+  <!-- Aplica o tema salvo antes da renderização (evita "flash" de tema) -->
+  <script>
+    (function () {
+      var t = localStorage.getItem("sim.theme") || "dark";
+      document.documentElement.setAttribute("data-theme", t);
+    })();
+  </script>
+  <link rel="stylesheet" href="/static/styles.css?v=1.3" />
+</head>
+<body>
+<div class="app">
+
+  <!-- ============================== SIDEBAR ============================== -->
+  <aside class="sidebar">
+    <div class="brand" onclick="switchMainTab('DASHBOARD')">
+      <img src="/static/logo.png" alt="SIM" class="brand-logo" />
+      <div>
+        <div class="brand-name">SIM</div>
+        <div class="brand-sub">Scherer Investments Money</div>
+      </div>
     </div>
-    <div class="flex items-center gap-2 shrink-0">
-      <span id="last-sync-badge" class="text-[11px] text-slate-400 hidden sm:inline">Ao Vivo</span>
-      <button onclick="refreshAll()" class="px-2.5 py-1 rounded-md bg-slate-800 hover:bg-slate-700 text-emerald-400 font-medium transition flex items-center gap-1">
-        <span>↻</span> <span class="hidden sm:inline">Atualizar</span>
+
+    <nav class="nav">
+      <div class="nav-label">Patrimônio</div>
+      <button class="nav-item is-active" data-tab="DASHBOARD" onclick="switchMainTab('DASHBOARD')">
+        <span data-icon="wallet"></span><span>Minha carteira</span>
+        <span class="nav-count" id="nav-count-portfolio"></span>
+      </button>
+      <button class="nav-item" onclick="openB3SyncModal()" style="color:var(--accent);font-weight:600">
+        <span data-icon="file-spreadsheet" style="color:var(--accent)"></span><span>Sincronizar B3</span>
+        <span class="badge badge-accent xs" style="margin-left:auto">.XLSX</span>
+      </button>
+      <button class="nav-item" data-tab="RENDA_FIXA" onclick="switchMainTab('RENDA_FIXA')">
+        <span data-icon="piggy"></span><span>Renda fixa</span>
+      </button>
+      <button class="nav-item" data-tab="DIVIDENDS" onclick="switchMainTab('DIVIDENDS')">
+        <span data-icon="coins"></span><span>Proventos</span>
+      </button>
+      <button class="nav-item" data-tab="AI_RADAR" onclick="switchMainTab('AI_RADAR')">
+        <span data-icon="sparkles"></span><span>Radar IA &amp; Oportunidades</span>
+        <span class="nav-count" id="nav-count-radar" style="color:var(--accent)">IA</span>
+      </button>
+
+      <div class="nav-label">Mercado</div>
+      <button class="nav-item" data-tab="ACAO_BR" onclick="switchMainTab('ACAO_BR')">
+        <span data-icon="trending-up"></span><span>Ações B3</span>
+      </button>
+      <button class="nav-item" data-tab="FII" onclick="switchMainTab('FII')">
+        <span data-icon="building"></span><span>Fundos imobiliários</span>
+      </button>
+      <button class="nav-item" data-tab="ETF_BR" onclick="switchMainTab('ETF_BR')">
+        <span data-icon="layers"></span><span>ETFs</span>
+      </button>
+      <button class="nav-item" data-tab="STOCK_US" onclick="switchMainTab('STOCK_US')">
+        <span data-icon="globe"></span><span>Stocks EUA</span>
+      </button>
+      <button class="nav-item" data-tab="CRIPTO" onclick="switchMainTab('CRIPTO')">
+        <span data-icon="bitcoin"></span><span>Criptomoedas</span>
+      </button>
+    </nav>
+
+    <div class="sidebar-foot">
+      <div class="status-card">
+        <div class="row between">
+          <span class="row"><span class="live-dot"></span><span class="strong">Mercado ao vivo</span></span>
+        </div>
+        <div class="faint xs" style="margin-top:4px" id="last-sync-badge">Sincronizando…</div>
+      </div>
+      <button class="nav-item" onclick="openMobileModal()">
+        <span data-icon="smartphone"></span><span>Abrir no celular</span>
       </button>
     </div>
-  </div>
+  </aside>
 
-  <!-- 2. HEADER & ASSET CLASS NAVIGATION TABS -->
-  <header class="bg-[#0d1321]/95 border-b border-slate-800/80 px-4 lg:px-8 pt-3 pb-0 sticky top-[37px] z-30 backdrop-blur-md">
-    <div class="max-w-7xl mx-auto">
-      <div class="flex flex-wrap items-center justify-between gap-3 pb-3">
-        <!-- Brand -->
-        <div class="flex items-center gap-3 cursor-pointer" onclick="switchMainTab('DASHBOARD')">
-          <img src="/static/logo.png" alt="SIM Logo" class="w-11 h-11 rounded-xl shadow-lg shadow-emerald-950/60 border border-emerald-500/30 object-cover" />
-          <div>
-            <h1 class="font-bold text-base sm:text-lg leading-tight text-white flex items-center gap-2">
-              Scherer Investments Money
-              <span class="text-[10px] font-semibold uppercase tracking-wider px-2 py-0.5 rounded-full bg-emerald-500/15 text-emerald-400 border border-emerald-500/30">Live B3 & Global</span>
-            </h1>
-            <p class="text-xs text-slate-400 hidden sm:block">Gestão de Patrimônio, Ações, FIIs, Renda Fixa e Inteligência de Mercado</p>
+  <!-- ============================== MAIN ============================== -->
+  <div class="main">
+    <header class="topbar">
+      <div class="page-heading">
+        <img src="/static/logo.png" alt="SIM" class="topbar-logo mobile-only" onclick="switchMainTab('DASHBOARD')" />
+        <div>
+          <div class="eyebrow" id="page-eyebrow">Patrimônio</div>
+          <h1 id="page-title">Minha carteira</h1>
+        </div>
+      </div>
+
+      <div class="ticker" title="Indicadores ao vivo — passe o mouse para pausar">
+        <div class="ticker-track" id="macro-ticker-bar">
+          <span class="tk"><span class="tk-label">Carregando indicadores…</span></span>
+        </div>
+      </div>
+
+      <div class="topbar-actions">
+        <button class="btn-icon" id="btn-refresh" onclick="refreshAll()" title="Atualizar cotações"><span data-icon="refresh"></span></button>
+        <button class="btn-icon" id="btn-privacy" onclick="togglePrivacy()" title="Ocultar valores"><span data-icon="eye"></span></button>
+        <button class="btn-icon" id="btn-theme" onclick="toggleTheme()" title="Alternar tema"><span data-icon="moon"></span></button>
+        <button class="btn-icon" id="btn-ai-settings" onclick="openAiSettingsModal()" title="Configurações de IA &amp; WhatsApp"><span data-icon="settings"></span></button>
+        
+        <!-- Perfil do Usuário & Segurança -->
+        <div class="user-menu-container" id="user-menu-wrap" style="margin-left:4px">
+          <button class="btn-user-pill" id="btn-user-profile" onclick="toggleUserMenu(event)" title="Conta ativa e opções de segurança">
+            <span class="user-avatar-dot"></span>
+            <span id="topbar-username">Lucas</span>
+            <span data-icon="chevron-down" data-size="12"></span>
+          </button>
+          <div id="user-dropdown-menu" class="dropdown-menu hidden">
+            <div class="dropdown-header" id="user-dropdown-info">Conectado como Lucas</div>
+            <div class="divider" style="margin:2px 0"></div>
+            <button class="dropdown-item" onclick="openChangePinModal()"><span data-icon="key" data-size="14"></span><span>Alterar meu PIN</span></button>
+            <button class="dropdown-item" onclick="openAuthModal('REGISTER')"><span data-icon="user-plus" data-size="14"></span><span>Nova Conta (Amigo)</span></button>
+            <button class="dropdown-item" onclick="openAuthModal('LOGIN')"><span data-icon="users" data-size="14"></span><span>Trocar de Conta</span></button>
+            <div class="divider" style="margin:2px 0"></div>
+            <button class="dropdown-item danger" onclick="logoutCurrentUser()"><span data-icon="lock" data-size="14"></span><span>Bloquear Carteira</span></button>
           </div>
         </div>
 
-        <!-- Action Buttons -->
-        <div class="flex items-center gap-2">
-          <button onclick="togglePrivacy()" id="btn-privacy" title="Modo Privacidade (Ocultar Valores)" class="p-2 rounded-lg bg-slate-800/90 hover:bg-slate-700 text-slate-300 border border-slate-700/70 text-xs font-medium">
-            👁️
-          </button>
-          <button onclick="openMobileModal()" class="px-3 py-2 rounded-lg bg-slate-800/90 hover:bg-slate-700 text-slate-200 border border-slate-700/70 text-xs font-semibold flex items-center gap-1.5">
-            <span>📱</span> <span class="hidden sm:inline">App Celular</span>
-          </button>
-          <button onclick="openAddInvestmentModal()" class="px-3.5 py-2 rounded-lg bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold text-xs sm:text-sm shadow-lg shadow-emerald-950/60 transition flex items-center gap-1.5">
-            <span>+ Adicionar à Carteira</span>
-          </button>
-        </div>
+        <button class="btn btn-secondary" onclick="openB3SyncModal()" style="margin-left:6px" title="Importar ou exportar planilha Excel da Área do Investidor B3">
+          <span data-icon="file-spreadsheet"></span><span>Sincronizar B3</span>
+        </button>
+        <button class="btn btn-primary" onclick="openAddPicker()" style="margin-left:6px">
+          <span data-icon="plus"></span><span>Novo lançamento</span>
+        </button>
       </div>
+    </header>
 
-      <!-- Top Navigation Bar (Abas por Classe de Ativo mapeadas) -->
-      <nav class="flex items-center gap-1.5 overflow-x-auto no-scrollbar pt-1">
-        <button onclick="switchMainTab('DASHBOARD')" id="tab-DASHBOARD" class="nav-tab tab-active px-4 py-2.5 text-xs sm:text-sm font-semibold border-b-2 border-transparent rounded-t-lg whitespace-nowrap transition flex items-center gap-1.5">
-          <span>💼</span> Minha Carteira
-        </button>
-        <button onclick="switchMainTab('ACAO_BR')" id="tab-ACAO_BR" class="nav-tab text-slate-400 hover:text-slate-200 px-4 py-2.5 text-xs sm:text-sm font-semibold border-b-2 border-transparent rounded-t-lg whitespace-nowrap transition flex items-center gap-1.5">
-          <svg class="w-4 h-3 inline-block rounded-[2px] shadow-sm shrink-0" viewBox="0 0 28 20" fill="none"><rect width="28" height="20" rx="2" fill="#009B3A"/><path d="M14 2.5L25.5 10L14 17.5L2.5 10L14 2.5Z" fill="#FEDF00"/><circle cx="14" cy="10" r="4.2" fill="#002776"/><path d="M10.1 8.8C12.5 8.1 15.6 8.6 18.1 10.3" stroke="#FFFFFF" stroke-width="1" stroke-linecap="round"/></svg>
-          <span>Ações B3</span>
-        </button>
-        <button onclick="switchMainTab('FII')" id="tab-FII" class="nav-tab text-slate-400 hover:text-slate-200 px-4 py-2.5 text-xs sm:text-sm font-semibold border-b-2 border-transparent rounded-t-lg whitespace-nowrap transition flex items-center gap-1.5">
-          <span>🏢</span> Explorar FIIs
-        </button>
-        <button onclick="switchMainTab('RENDA_FIXA')" id="tab-RENDA_FIXA" class="nav-tab text-slate-400 hover:text-slate-200 px-4 py-2.5 text-xs sm:text-sm font-semibold border-b-2 border-transparent rounded-t-lg whitespace-nowrap transition flex items-center gap-1.5">
-          <span>🏦</span> Renda Fixa & Caixinhas
-        </button>
-        <button onclick="switchMainTab('STOCK_US')" id="tab-STOCK_US" class="nav-tab text-slate-400 hover:text-slate-200 px-4 py-2.5 text-xs sm:text-sm font-semibold border-b-2 border-transparent rounded-t-lg whitespace-nowrap transition flex items-center gap-1.5">
-          <svg class="w-4 h-3 inline-block rounded-[2px] shadow-sm shrink-0" viewBox="0 0 28 20" fill="none"><rect width="28" height="20" rx="2" fill="#FFFFFF"/><path d="M0 0H28V2.8H0V0ZM0 5.6H28V8.4H0V5.6ZM0 11.2H28V14H0V11.2ZM0 16.8H28V20H0V16.8Z" fill="#B22234"/><rect width="12" height="11.2" rx="1" fill="#3C3B6E"/><circle cx="3" cy="2.8" r="0.9" fill="#FFF"/><circle cx="6" cy="2.8" r="0.9" fill="#FFF"/><circle cx="9" cy="2.8" r="0.9" fill="#FFF"/><circle cx="4.5" cy="5.6" r="0.9" fill="#FFF"/><circle cx="7.5" cy="5.6" r="0.9" fill="#FFF"/><circle cx="3" cy="8.4" r="0.9" fill="#FFF"/><circle cx="6" cy="8.4" r="0.9" fill="#FFF"/><circle cx="9" cy="8.4" r="0.9" fill="#FFF"/></svg>
-          <span>Stocks EUA</span>
-        </button>
-        <button onclick="switchMainTab('CRIPTO')" id="tab-CRIPTO" class="nav-tab text-slate-400 hover:text-slate-200 px-4 py-2.5 text-xs sm:text-sm font-semibold border-b-2 border-transparent rounded-t-lg whitespace-nowrap transition flex items-center gap-1.5">
-          <span>₿</span> Criptomoedas
-        </button>
-        <button onclick="switchMainTab('ETF_BR')" id="tab-ETF_BR" class="nav-tab text-slate-400 hover:text-slate-200 px-4 py-2.5 text-xs sm:text-sm font-semibold border-b-2 border-transparent rounded-t-lg whitespace-nowrap transition flex items-center gap-1.5">
-          <span>🌎</span> ETFs
-        </button>
-        <button onclick="switchMainTab('DIVIDENDS')" id="tab-DIVIDENDS" class="nav-tab text-slate-400 hover:text-slate-200 px-4 py-2.5 text-xs sm:text-sm font-semibold border-b-2 border-transparent rounded-t-lg whitespace-nowrap transition flex items-center gap-1.5">
-          <span>💰</span> Dividendos
-        </button>
-      </nav>
-    </div>
-  </header>
+    <main class="page">
 
-  <!-- 3. MAIN CONTENT AREA -->
-  <main class="flex-1 max-w-7xl w-full mx-auto px-4 lg:px-8 py-6 space-y-6">
+      <!-- ==================== VIEW: MINHA CARTEIRA ==================== -->
+      <section id="view-DASHBOARD" class="view">
+        <!-- Hero (patrimônio + KPIs + barra de alocação) -->
+        <div class="card hero" id="kpi-cards-container"></div>
 
-    <!-- ==================== VIEW A: MINHA CARTEIRA (COM 2 ABAS: GRÁFICO REDONDO E LISTA POR CATEGORIAS) ==================== -->
-    <section id="view-DASHBOARD" class="space-y-6">
-      <!-- KPI Cards -->
-      <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4" id="kpi-cards-container"></div>
-
-      <!-- Barra de Abas Internas da "Minha Carteira" + Ações Rápidas -->
-      <div class="glass-card rounded-2xl p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-        <div class="flex items-center gap-2 bg-slate-900/90 p-1.5 rounded-xl border border-slate-800">
-          <button onclick="switchPortfolioSubTab('CHART')" id="subtab-CHART" class="pill-active px-4 py-2 rounded-lg text-xs sm:text-sm font-bold transition flex items-center gap-2">
-            <span>🥧</span> 1. Gráfico de Distribuição
-          </button>
-          <button onclick="switchPortfolioSubTab('CATEGORIES')" id="subtab-CATEGORIES" class="px-4 py-2 rounded-lg text-xs sm:text-sm font-bold text-slate-300 hover:text-white transition flex items-center gap-2">
-            <span>📋</span> 2. Meus Investimentos por Categoria
-            <span id="portfolio-count-badge" class="px-2 py-0.5 rounded-full text-[11px] bg-slate-800 text-emerald-400">0</span>
-          </button>
-        </div>
-
-        <div class="flex flex-wrap items-center gap-2">
-          <button onclick="openAddInvestmentModal('FII')" class="px-3 py-1.5 rounded-lg bg-blue-500/15 hover:bg-blue-500/25 text-blue-300 border border-blue-500/30 text-xs font-semibold transition">
-            + FII
-          </button>
-          <button onclick="openAddInvestmentModal('ACAO_BR')" class="px-3 py-1.5 rounded-lg bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-300 border border-emerald-500/30 text-xs font-semibold transition">
-            + Ação
-          </button>
-          <button onclick="openAddInvestmentModal('CAIXINHA')" class="px-3 py-1.5 rounded-lg bg-purple-500/15 hover:bg-purple-500/25 text-purple-300 border border-purple-500/30 text-xs font-semibold transition">
-            + Caixinha Nubank
-          </button>
-          <button onclick="openAddInvestmentModal('RENDA_FIXA')" class="px-3 py-1.5 rounded-lg bg-indigo-500/15 hover:bg-indigo-500/25 text-indigo-300 border border-indigo-500/30 text-xs font-semibold transition">
-            + CDB / LCI / IPCA+
-          </button>
-          <button onclick="clearEntirePortfolio()" id="btn-clear-portfolio" class="hidden px-2.5 py-1.5 rounded-lg bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/25 text-xs font-medium transition" title="Limpar todos os investimentos da carteira">
-            🗑️ Zerar Carteira
-          </button>
-        </div>
-      </div>
-
-      <!-- ESTADO VAZIO (QUANDO A CARTEIRA AINDA NÃO TEM ATIVOS) -->
-      <div id="portfolio-empty-state" class="hidden glass-card rounded-2xl p-8 text-center border border-dashed border-emerald-500/40 space-y-5">
-        <div class="w-16 h-16 rounded-2xl bg-emerald-500/15 border border-emerald-500/30 flex items-center justify-center mx-auto text-3xl">
-          💼
-        </div>
-        <div class="max-w-xl mx-auto space-y-2">
-          <h2 class="text-xl font-black text-white">Monte a Sua Carteira de Investimentos</h2>
-          <p class="text-xs sm:text-sm text-slate-300 leading-relaxed">
-            Sua carteira está limpa e pronta! Adicione os investimentos que você já comprou — sejam <strong>Fundos Imobiliários (FIIs)</strong>, <strong>Ações</strong>, <strong>Caixinha do Nubank</strong>, <strong>CDBs</strong>, <strong>LCI/LCA</strong> ou <strong>Tesouro IPCA+</strong> — para ver o gráfico redondo de distribuição e acompanhar tudo ao vivo.
-          </p>
-        </div>
-        <div class="flex flex-wrap items-center justify-center gap-3 pt-2">
-          <button onclick="openAddInvestmentModal('FII')" class="px-4 py-2.5 rounded-xl bg-blue-500 hover:bg-blue-400 text-slate-950 font-bold text-xs sm:text-sm shadow-lg transition">
-            🏢 Adicionar Fundo Imobiliário (FII)
-          </button>
-          <button onclick="openAddInvestmentModal('ACAO_BR')" class="px-4 py-2.5 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold text-xs sm:text-sm shadow-lg transition flex items-center gap-2">
-            <svg class="w-4 h-3 inline-block rounded-[2px] shadow-sm shrink-0" viewBox="0 0 28 20" fill="none"><rect width="28" height="20" rx="2" fill="#009B3A"/><path d="M14 2.5L25.5 10L14 17.5L2.5 10L14 2.5Z" fill="#FEDF00"/><circle cx="14" cy="10" r="4.2" fill="#002776"/><path d="M10.1 8.8C12.5 8.1 15.6 8.6 18.1 10.3" stroke="#FFFFFF" stroke-width="1" stroke-linecap="round"/></svg>
-            <span>Adicionar Ação (B3)</span>
-          </button>
-          <button onclick="openAddInvestmentModal('CAIXINHA')" class="px-4 py-2.5 rounded-xl bg-purple-500 hover:bg-purple-400 text-white font-bold text-xs sm:text-sm shadow-lg transition">
-            💜 Adicionar Caixinha Nubank / CDI
-          </button>
-          <button onclick="openAddInvestmentModal('RENDA_FIXA')" class="px-4 py-2.5 rounded-xl bg-indigo-500 hover:bg-indigo-400 text-white font-bold text-xs sm:text-sm shadow-lg transition">
-            🏦 Adicionar CDB / LCI / Tesouro IPCA+
-          </button>
-        </div>
-      </div>
-
-      <!-- SUB-ABA 1: GRÁFICO REDONDO DE DISTRIBUIÇÃO DA CARTEIRA -->
-      <div id="portfolio-subview-CHART" class="space-y-6">
-        <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
-          <!-- Gráfico Redondo Interativo & Legenda -->
-          <div class="lg:col-span-8 glass-card rounded-2xl p-5 sm:p-6">
-            <div class="flex flex-wrap items-center justify-between gap-3 mb-5">
-              <div>
-                <h2 class="font-bold text-base sm:text-lg text-white">Distribuição da Minha Carteira</h2>
-                <p class="text-xs text-slate-400">Passe o mouse sobre as fatias do gráfico redondo ou clique em uma categoria para ver os detalhes</p>
-              </div>
-              <div class="flex items-center gap-1.5 bg-slate-900 p-1 rounded-xl border border-slate-800">
-                <button onclick="setDonutMode('CATEGORY')" id="donut-mode-CATEGORY" class="pill-active px-3 py-1 rounded-lg text-xs font-bold transition">
-                  Por Categoria
-                </button>
-                <button onclick="setDonutMode('ASSET')" id="donut-mode-ASSET" class="px-3 py-1 rounded-lg text-xs font-bold text-slate-300 hover:text-white transition">
-                  Por Ativo / Fundo
-                </button>
-              </div>
-            </div>
-
-            <div class="grid grid-cols-1 md:grid-cols-12 gap-6 items-center">
-              <div class="md:col-span-5 flex flex-col items-center justify-center relative">
-                <canvas id="allocation-canvas" width="260" height="260" class="cursor-pointer"></canvas>
-                <span id="usd-equivalent-badge" class="mt-2 text-[11px] font-mono px-2.5 py-1 rounded-lg bg-slate-800/90 text-slate-300"></span>
-              </div>
-              <div class="md:col-span-7 space-y-2.5 max-h-[340px] overflow-y-auto pr-1" id="allocation-bars-list"></div>
-            </div>
+        <!-- Toolbar -->
+        <div class="toolbar" id="portfolio-toolbar">
+          <div class="seg">
+            <button class="seg-btn is-active" id="subtab-CHART" onclick="switchPortfolioSubTab('CHART')">
+              <span data-icon="pie"></span>Visão geral
+            </button>
+            <button class="seg-btn" id="subtab-CATEGORIES" onclick="switchPortfolioSubTab('CATEGORIES')">
+              <span data-icon="list"></span>Posições <span class="seg-count" id="portfolio-count-badge">0</span>
+            </button>
           </div>
+          <div class="row gap-2">
+            <button class="btn btn-sm btn-secondary" onclick="openB3SyncModal()" title="Sincronizar carteira via planilha Excel/CSV da B3">
+              <span data-icon="file-spreadsheet" data-size="14"></span><span>Sincronizar B3 (.xlsx)</span>
+            </button>
+            <button class="btn btn-sm btn-danger hidden" id="btn-clear-portfolio" onclick="clearEntirePortfolio()" title="Remover todos os investimentos">
+              <span data-icon="trash"></span><span class="label-hide">Zerar carteira</span>
+            </button>
+          </div>
+        </div>
 
-          <!-- Smart Rebalancer ("Onde aportar hoje?") -->
-          <div class="lg:col-span-4 glass-card rounded-2xl p-5 flex flex-col justify-between">
-            <div>
-              <div class="flex items-center justify-between mb-2">
-                <h2 class="font-bold text-base text-white flex items-center gap-2">
-                  <span>🎯</span> Onde Aportar Hoje?
-                </h2>
-                <span class="text-[11px] px-2 py-0.5 rounded bg-emerald-500/15 text-emerald-400 font-semibold">Rebalanceamento</span>
-              </div>
-              <p class="text-xs text-slate-400 mb-3">Digite o valor de um novo aporte e veja a sugestão por categoria:</p>
-              <div class="flex items-center gap-2 mb-4">
-                <div class="relative flex-1">
-                  <span class="absolute left-3 top-2 text-xs text-slate-400 font-bold">R$</span>
-                  <input type="number" id="input-rebalance-amount" value="2000" step="100"
-                    class="w-full pl-9 pr-3 py-1.5 rounded-lg bg-slate-900 border border-slate-700 text-sm text-white font-semibold focus:outline-none focus:border-emerald-500" />
+        <!-- Estado vazio -->
+        <div id="portfolio-empty-state" class="card hidden">
+          <div class="empty">
+            <div class="empty-icon"><span data-icon="wallet" data-size="24"></span></div>
+            <h3>Comece a montar sua carteira</h3>
+            <p>Cadastre o que você já tem — ações, fundos imobiliários, caixinhas, CDBs ou Tesouro — e acompanhe tudo ao vivo, em um só lugar.</p>
+            <div class="tiles" id="empty-tiles"></div>
+          </div>
+        </div>
+
+        <!-- SUB-VIEW: VISÃO GERAL -->
+        <div id="portfolio-subview-CHART" class="stack gap-4" style="gap:20px">
+          <div class="grid grid-main">
+            <!-- Alocação -->
+            <div class="card card-pad">
+              <div class="card-head">
+                <div>
+                  <div class="card-title">Alocação</div>
+                  <div class="card-sub">Passe o mouse no gráfico ou clique em um item para detalhar</div>
                 </div>
-                <button onclick="loadRebalance()" class="px-3.5 py-1.5 rounded-lg bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold text-xs">
-                  Calcular
-                </button>
+                <div class="seg">
+                  <button class="seg-btn is-active" id="donut-mode-CATEGORY" onclick="setDonutMode('CATEGORY')">Categoria</button>
+                  <button class="seg-btn" id="donut-mode-ASSET" onclick="setDonutMode('ASSET')">Ativo</button>
+                </div>
               </div>
-              <div id="rebalance-results" class="space-y-2"></div>
+              <div class="alloc-body">
+                <div class="donut-wrap"><canvas id="allocation-canvas"></canvas></div>
+                <div class="legend" id="allocation-bars-list"></div>
+              </div>
             </div>
 
-            <div class="mt-4 pt-3 border-t border-slate-800 flex items-center justify-between text-xs">
-              <span class="text-slate-400">Ver lista completa de ativos:</span>
-              <button onclick="switchPortfolioSubTab('CATEGORIES')" class="text-emerald-400 hover:text-emerald-300 font-bold">
-                Abrir Lista por Categorias →
+            <!-- Onde aportar -->
+            <div class="card card-pad stack">
+              <div class="card-head" style="margin-bottom:14px">
+                <div>
+                  <div class="card-title"><span data-icon="target"></span>Onde aportar</div>
+                  <div class="card-sub">Sugestão de rebalanceamento pelas suas metas</div>
+                </div>
+              </div>
+              <div class="input-group">
+                <span class="prefix">R$</span>
+                <input type="number" id="input-rebalance-amount" value="2000" step="100" onkeydown="if(event.key==='Enter')loadRebalance()" />
+                <button class="btn btn-sm btn-secondary" onclick="loadRebalance()">Calcular</button>
+              </div>
+              <div id="rebalance-results" class="rb-list"></div>
+            </div>
+          </div>
+
+          <!-- Principais posições -->
+          <div id="quick-holdings-panel" class="card card-pad hidden">
+            <div class="card-head" style="margin-bottom:8px">
+              <div>
+                <div class="card-title">Principais posições</div>
+                <div class="card-sub">Seus maiores ativos por valor atual</div>
+              </div>
+              <button class="link" onclick="switchPortfolioSubTab('CATEGORIES')">Ver todas <span data-icon="arrow-right" data-size="14"></span></button>
+            </div>
+            <div id="quick-holdings-grid" class="hold-list"></div>
+          </div>
+        </div>
+
+        <!-- SUB-VIEW: POSIÇÕES POR CATEGORIA -->
+        <div id="portfolio-subview-CATEGORIES" class="stack hidden" style="gap:16px">
+          <div class="control-bar">
+            <div class="search-box">
+              <span class="search-ic" data-icon="search" data-size="16"></span>
+              <input type="text" id="portfolio-search-input" oninput="onPortfolioSearchInput(this.value)" placeholder="Pesquisar ativo na carteira por código, nome ou corretora…" />
+              <button type="button" id="portfolio-search-clear" class="search-clear hidden" onclick="clearPortfolioSearch()" title="Limpar busca">
+                <span data-icon="x" data-size="14"></span>
+              </button>
+            </div>
+            <div class="seg" title="Estilo de visualização da lista">
+              <button class="seg-btn layout-btn-GRID is-active" onclick="setListLayout('GRID')">
+                <span data-icon="grid" data-size="15"></span><span>Grade</span>
+              </button>
+              <button class="seg-btn layout-btn-STRIPS" onclick="setListLayout('STRIPS')">
+                <span data-icon="rows" data-size="15"></span><span>Tiras</span>
+              </button>
+            </div>
+          </div>
+
+          <div class="chips" id="category-filter-pills">
+            <button class="chip cat-filter-btn is-active" id="catfilter-ALL" onclick="setCategoryListFilter('ALL')">Todas</button>
+            <button class="chip cat-filter-btn" id="catfilter-FAVORITES" onclick="setCategoryListFilter('FAVORITES')" style="--c:#e8b04b"><span data-icon="star-fill" data-size="13" style="color:var(--gold)"></span>Favoritos <span id="portfolio-fav-count" class="faint xs"></span></button>
+            <button class="chip cat-filter-btn" id="catfilter-FII" onclick="setCategoryListFilter('FII')" style="--c:#5b8def"><span class="dot"></span>FIIs</button>
+            <button class="chip cat-filter-btn" id="catfilter-ACAO_BR" onclick="setCategoryListFilter('ACAO_BR')" style="--c:#3ecf8e"><span class="dot"></span>Ações</button>
+            <button class="chip cat-filter-btn" id="catfilter-CAIXINHA" onclick="setCategoryListFilter('CAIXINHA')" style="--c:#a78bfa"><span class="dot"></span>Caixinhas</button>
+            <button class="chip cat-filter-btn" id="catfilter-RENDA_FIXA" onclick="setCategoryListFilter('RENDA_FIXA')" style="--c:#818cf8"><span class="dot"></span>CDB · LCI · LCA</button>
+            <button class="chip cat-filter-btn" id="catfilter-TESOURO" onclick="setCategoryListFilter('TESOURO')" style="--c:#2dd4bf"><span class="dot"></span>Tesouro</button>
+            <button class="chip cat-filter-btn" id="catfilter-OUTROS" onclick="setCategoryListFilter('OUTROS')" style="--c:#f0883e"><span class="dot"></span>Global · ETFs · Cripto</button>
+          </div>
+
+          <div id="categorized-investments-container" class="stack" style="gap:16px"></div>
+
+          <!-- Histórico de lançamentos (colapsável) -->
+          <details id="individual-transactions-panel" class="card hidden">
+            <summary class="card-pad row between">
+              <div>
+                <div class="card-title"><span data-icon="history"></span>Histórico de lançamentos <span class="badge" id="tx-count-badge">0</span></div>
+                <div class="card-sub">Exclua uma ordem específica sem remover o ativo inteiro</div>
+              </div>
+              <span class="chev" data-icon="chevron-down"></span>
+            </summary>
+            <div class="table-wrap" style="padding:0 22px 18px">
+              <table class="table">
+                <thead>
+                  <tr>
+                    <th>Data</th><th>Ativo</th><th>Tipo</th>
+                    <th class="r">Qtd</th><th class="r">Preço unit.</th><th class="r">Total</th><th></th>
+                  </tr>
+                </thead>
+                <tbody id="individual-transactions-tbody"></tbody>
+              </table>
+            </div>
+          </details>
+        </div>
+      </section>
+
+      <!-- ==================== VIEW: EXPLORADOR DE MERCADO ==================== -->
+      <section id="view-MARKET_CLASS" class="view hidden">
+        <div class="page-head">
+          <div>
+            <h2 id="market-class-title">Explorador</h2>
+            <p id="market-class-subtitle">Clique em um ativo para abrir o Raio-X completo.</p>
+          </div>
+          <div class="row gap-2 wrap">
+            <!-- Filtro: Mercado / Favoritos / Na carteira -->
+            <div class="seg">
+              <button class="seg-btn is-active" id="btn-scope-ALL" onclick="setMarketScope('ALL')">Mercado</button>
+              <button class="seg-btn" id="btn-scope-FAVORITES" onclick="setMarketScope('FAVORITES')">
+                <span data-icon="star-fill" data-size="13" style="color:var(--gold)"></span><span>Favoritos</span>
+                <span class="seg-count" id="fav-scope-count">0</span>
+              </button>
+              <button class="seg-btn" id="btn-scope-MINE" onclick="setMarketScope('MINE')">Na carteira</button>
+            </div>
+
+            <!-- Alternador de estilo da lista: Grade vs Tiras Horizontais -->
+            <div class="seg" title="Alternar visualização entre Cards e Lista Ordenada em Tiras">
+              <button class="seg-btn layout-btn-GRID is-active" onclick="setListLayout('GRID')">
+                <span data-icon="grid" data-size="15"></span><span>Grade</span>
+              </button>
+              <button class="seg-btn layout-btn-STRIPS" onclick="setListLayout('STRIPS')">
+                <span data-icon="rows" data-size="15"></span><span>Tiras</span>
               </button>
             </div>
           </div>
         </div>
 
-        <!-- Painel Rápido de Ativos Cadastrados na Carteira (Com botão direto para Excluir qualquer Ação, FII ou Renda Fixa) -->
-        <div id="quick-holdings-panel" class="hidden glass-card rounded-2xl p-5 space-y-3">
-          <div class="flex flex-wrap items-center justify-between gap-2">
-            <div>
-              <h3 class="font-bold text-sm sm:text-base text-white">Meus Ativos na Carteira (Gerenciamento Rápido)</h3>
-              <p class="text-xs text-slate-400">Clique no ativo para abrir o gráfico/detalhes ou clique em <strong>🗑️ Excluir</strong> ao lado de qualquer item colocado incorretamente</p>
-            </div>
-            <button onclick="switchPortfolioSubTab('CATEGORIES')" class="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-emerald-400 text-xs font-bold border border-slate-700">
-              Ver Separado por Categorias →
-            </button>
-          </div>
-          <div id="quick-holdings-grid" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3"></div>
+        <div class="chips mobile-only" id="market-class-chips">
+          <button class="chip" data-tab="ACAO_BR" onclick="switchMainTab('ACAO_BR')">Ações</button>
+          <button class="chip" data-tab="FII" onclick="switchMainTab('FII')">FIIs</button>
+          <button class="chip" data-tab="ETF_BR" onclick="switchMainTab('ETF_BR')">ETFs</button>
+          <button class="chip" data-tab="STOCK_US" onclick="switchMainTab('STOCK_US')">Stocks EUA</button>
+          <button class="chip" data-tab="CRIPTO" onclick="switchMainTab('CRIPTO')">Cripto</button>
         </div>
-      </div>
 
-      <!-- SUB-ABA 2: LISTA DE INVESTIMENTOS SEPARADA POR CATEGORIAS -->
-      <div id="portfolio-subview-CATEGORIES" class="hidden space-y-5">
-        <!-- Filtro Rápido de Categoria -->
-        <div class="glass-card rounded-2xl p-4 flex flex-wrap items-center justify-between gap-3">
-          <div class="flex items-center gap-2 overflow-x-auto no-scrollbar" id="category-filter-pills">
-            <button onclick="setCategoryListFilter('ALL')" id="catfilter-ALL" class="cat-filter-btn pill-active px-3.5 py-1.5 rounded-full text-xs font-bold transition shrink-0">
-              Todas as Categorias
-            </button>
-            <button onclick="setCategoryListFilter('FII')" id="catfilter-FII" class="cat-filter-btn px-3.5 py-1.5 rounded-full bg-slate-800 text-slate-300 text-xs font-semibold transition shrink-0">
-              🏢 FIIs
-            </button>
-            <button onclick="setCategoryListFilter('ACAO_BR')" id="catfilter-ACAO_BR" class="cat-filter-btn px-3.5 py-1.5 rounded-full bg-slate-800 text-slate-300 text-xs font-semibold transition shrink-0 flex items-center gap-1.5">
-              <svg class="w-4 h-3 inline-block rounded-[2px] shadow-sm shrink-0" viewBox="0 0 28 20" fill="none"><rect width="28" height="20" rx="2" fill="#009B3A"/><path d="M14 2.5L25.5 10L14 17.5L2.5 10L14 2.5Z" fill="#FEDF00"/><circle cx="14" cy="10" r="4.2" fill="#002776"/><path d="M10.1 8.8C12.5 8.1 15.6 8.6 18.1 10.3" stroke="#FFFFFF" stroke-width="1" stroke-linecap="round"/></svg>
-              <span>Ações B3</span>
-            </button>
-            <button onclick="setCategoryListFilter('CAIXINHA')" id="catfilter-CAIXINHA" class="cat-filter-btn px-3.5 py-1.5 rounded-full bg-slate-800 text-slate-300 text-xs font-semibold transition shrink-0">
-              💜 Caixinhas (Nubank/CDI)
-            </button>
-            <button onclick="setCategoryListFilter('RENDA_FIXA')" id="catfilter-RENDA_FIXA" class="cat-filter-btn px-3.5 py-1.5 rounded-full bg-slate-800 text-slate-300 text-xs font-semibold transition shrink-0">
-              🏦 CDB / LCI / LCA / IPCA+
-            </button>
-            <button onclick="setCategoryListFilter('TESOURO')" id="catfilter-TESOURO" class="cat-filter-btn px-3.5 py-1.5 rounded-full bg-slate-800 text-slate-300 text-xs font-semibold transition shrink-0">
-              🏛️ Tesouro Direto
-            </button>
-            <button onclick="setCategoryListFilter('OUTROS')" id="catfilter-OUTROS" class="cat-filter-btn px-3.5 py-1.5 rounded-full bg-slate-800 text-slate-300 text-xs font-semibold transition shrink-0">
-              🌎 ETFs / Fundos / Cripto / EUA
+        <!-- Painel contextual especializado de cada classe de mercado -->
+        <div id="market-class-specialist-banner" class="class-banner"></div>
+
+        <!-- Barra superior de pesquisa rápida por nome, ticker ou setor -->
+        <div class="control-bar">
+          <div class="search-box">
+            <span class="search-ic" data-icon="search" data-size="16"></span>
+            <input
+              type="text"
+              id="market-search-input"
+              oninput="onMarketSearchInput(this.value)"
+              onkeydown="if(event.key==='Escape')clearMarketSearch()"
+              placeholder="Pesquisar ativo por código, nome ou setor (ex: PETR4, Petrobras, Shopping, Bancos…)"
+            />
+            <span id="market-result-count" class="search-count"></span>
+            <button type="button" id="market-search-clear" class="search-clear hidden" onclick="clearMarketSearch()" title="Limpar pesquisa">
+              <span data-icon="x" data-size="14"></span>
             </button>
           </div>
-          <button onclick="openAddInvestmentModal()" class="px-3.5 py-1.5 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold text-xs shrink-0">
-            + Novo Investimento
+        </div>
+
+        <div class="tabs">
+          <button class="tab sort-pill is-active" id="sort-em_alta" onclick="setMarketSort('em_alta')"><span data-icon="trending-up" data-size="15"></span>Em alta</button>
+          <button class="tab sort-pill" id="sort-em_baixa" onclick="setMarketSort('em_baixa')"><span data-icon="trending-down" data-size="15"></span>Em baixa</button>
+          <button class="tab sort-pill" id="sort-mais_comprados" onclick="setMarketSort('mais_comprados')"><span data-icon="flame" data-size="15"></span>Mais negociados</button>
+          <button class="tab sort-pill" id="sort-maior_dividendo" onclick="setMarketSort('maior_dividendo')"><span data-icon="coins" data-size="15"></span><span id="sort-maior_dividendo-label">Maior dividendo</span></button>
+          <button class="tab sort-pill" id="sort-mais_descontados" onclick="setMarketSort('mais_descontados')"><span data-icon="tag" data-size="15"></span><span id="sort-mais_descontados-label">Mais descontados</span></button>
+        </div>
+
+        <div id="market-assets-grid" class="grid grid-cards"></div>
+      </section>
+
+      <!-- ==================== VIEW: RAIO-X DO ATIVO ==================== -->
+      <section id="view-ASSET_DETAIL" class="view hidden">
+        <div class="toolbar">
+          <button class="btn btn-ghost" onclick="closeAssetDetail()" style="margin-left:-10px">
+            <span data-icon="arrow-left"></span>Voltar
           </button>
+          <div class="row gap-2">
+            <button id="btn-detail-delete" class="btn btn-danger hidden"><span data-icon="trash"></span><span class="label-hide">Remover da carteira</span></button>
+            <button id="btn-detail-buy" class="btn btn-primary"><span data-icon="plus"></span>Lançar compra</button>
+          </div>
         </div>
 
-        <!-- Container onde as categorias e seus respectivos ativos são renderizados -->
-        <div id="categorized-investments-container" class="space-y-6"></div>
-
-        <!-- Histórico de Lançamentos Individuais (permite apagar apenas uma compra/venda específica sem apagar o ativo todo) -->
-        <div id="individual-transactions-panel" class="hidden glass-card rounded-2xl p-5 space-y-3">
-          <div>
-            <h3 class="font-bold text-sm sm:text-base text-white">Histórico de Lançamentos Individuais (Ordens Registradas)</h3>
-            <p class="text-xs text-slate-400">Se você lançou uma compra ou venda duplicada/incorreta de uma Ação ou FII, pode excluir apenas aquele lançamento individual abaixo:</p>
+        <!-- Cabeçalho + gráfico -->
+        <div class="card card-pad">
+          <div class="detail-head">
+            <div class="detail-id">
+              <span class="avatar lg" id="detail-avatar">—</span>
+              <div style="min-width:0">
+                <div class="row gap-2 wrap">
+                  <span id="detail-ticker" class="detail-ticker">—</span>
+                  <button type="button" id="detail-fav-btn" class="fav-btn lg" title="Marcar como favorito"></button>
+                  <span id="detail-class-badge" class="badge badge-accent">—</span>
+                  <span id="detail-sector-badge" class="badge badge-outline">—</span>
+                </div>
+                <p id="detail-name" class="faint small truncate" style="margin-top:4px">—</p>
+              </div>
+            </div>
+            <div style="text-align:right" class="stack">
+              <div class="row gap-3" style="justify-content:flex-end;align-items:center">
+                <span id="detail-hover-change" class="badge badge-lg">0,00%</span>
+                <span id="detail-hover-price" class="detail-price">R$ 0,00</span>
+              </div>
+              <p id="detail-hover-date" class="faint xs" style="margin-top:8px">Passe o mouse sobre o gráfico</p>
+            </div>
           </div>
-          <div class="overflow-x-auto">
-            <table class="w-full text-left border-collapse text-xs">
+
+          <div class="chart-toolbar">
+            <div class="seg">
+              <button class="seg-btn period-btn" id="period-1D" onclick="loadAssetDetailPeriod('1D')">1D</button>
+              <button class="seg-btn period-btn" id="period-5D" onclick="loadAssetDetailPeriod('5D')">5D</button>
+              <button class="seg-btn period-btn is-active" id="period-1M" onclick="loadAssetDetailPeriod('1M')">1M</button>
+              <button class="seg-btn period-btn" id="period-6M" onclick="loadAssetDetailPeriod('6M')">6M</button>
+              <button class="seg-btn period-btn" id="period-1Y" onclick="loadAssetDetailPeriod('1Y')">1A</button>
+              <button class="seg-btn period-btn" id="period-5Y" onclick="loadAssetDetailPeriod('5Y')">5A</button>
+              <button class="seg-btn period-btn" id="period-10Y" onclick="loadAssetDetailPeriod('10Y')">10A</button>
+              <button class="seg-btn period-btn" id="period-MAX" onclick="loadAssetDetailPeriod('MAX')">MÁX</button>
+            </div>
+            <div class="range-stats">
+              <span>Mín <strong id="detail-low">—</strong></span>
+              <span>Máx <strong id="detail-high">—</strong></span>
+              <span id="detail-user-pm-badge" class="badge badge-gold hidden">Seu PM <strong id="detail-user-pm-val" style="color:inherit">R$ 0,00</strong></span>
+            </div>
+          </div>
+
+          <div class="chart-box"><canvas id="asset-interactive-chart"></canvas></div>
+          <div id="detail-fundamentals-strip" class="fund-strip"></div>
+        </div>
+
+        <!-- Painel Especializado por Classe (Proventos / Estrutura ETF / Wall Street USD / On-Chain Cripto) + Simulador -->
+        <div class="grid grid-detail">
+          <div class="card card-pad" id="detail-specialist-card"></div>
+          <div class="card card-pad stack" style="gap:16px" id="detail-simulator-card"></div>
+        </div>
+
+        <!-- Relatórios IA, 5 Pilares, Modelos de Decisão (Bazin & Graham) e Conclusão Geral da IA -->
+        <div class="card card-pad stack" style="gap:20px">
+          <div class="card-head" style="margin-bottom:0">
+            <div>
+              <div class="card-title"><span data-icon="sparkles"></span>Leitura inteligente de relatórios & Valuation</div>
+              <div class="card-sub">Auditoria CVM/B3, diagnóstico estrutural nos 5 pilares, Bazin, Graham e conclusão executiva da IA</div>
+            </div>
+            <button onclick="reanalyzeAssetReport()" id="btn-reanalyze-ai" class="btn btn-sm btn-secondary">
+              <span data-icon="sparkles" data-size="14"></span><span>Reinterpretar</span>
+            </button>
+          </div>
+          <div id="detail-ai-report-box"></div>
+          <div class="doc-history-block">
+            <div class="eyebrow" style="margin-bottom:6px">Documentos oficiais em sequência (7 PDFs mais recentes)</div>
+            <div id="detail-official-docs-list"></div>
+          </div>
+        </div>
+
+        <!-- Radar de Notícias (Último tópico da página, ocupando a largura total de forma limpa e horizontal) -->
+        <div class="card card-pad stack" style="gap:14px">
+          <div class="card-head" style="margin-bottom:0">
+            <div>
+              <div class="card-title"><span data-icon="newspaper"></span>Radar de notícias</div>
+              <div class="card-sub">Últimos 3 meses · até 7 notícias ordenadas das mais recentes primeiro</div>
+            </div>
+            <span id="detail-news-sentiment-badge" class="badge">NEUTRO</span>
+          </div>
+          <div id="detail-news-list"></div>
+        </div>
+      </section>
+
+      <!-- ==================== VIEW: RENDA FIXA ==================== -->
+      <section id="view-RENDA_FIXA" class="view hidden">
+        <div class="page-head">
+          <div>
+            <h2>Renda fixa</h2>
+            <p>Caixinhas, CDBs, LCIs/LCAs e Tesouro — calculados diariamente pelas taxas oficiais do Banco Central, já com IR regressivo.</p>
+          </div>
+          <button onclick="openFixedIncomeModal()" class="btn btn-primary"><span data-icon="plus"></span>Adicionar título</button>
+        </div>
+        <div id="fixed-income-summary"></div>
+        <div id="fixed-income-list" class="grid grid-cards" style="grid-template-columns:repeat(auto-fill,minmax(340px,1fr))"></div>
+      </section>
+
+      <!-- ==================== VIEW: PROVENTOS ==================== -->
+      <section id="view-DIVIDENDS" class="view hidden">
+        <div class="page-head">
+          <div>
+            <h2>Proventos</h2>
+            <p>Dividendos, rendimentos de FIIs e JCP recebidos — sua renda passiva em um só lugar.</p>
+          </div>
+          <button onclick="openDividendModal()" class="btn btn-primary"><span data-icon="plus"></span>Registrar provento</button>
+        </div>
+        <div id="dividends-summary"></div>
+        <div class="card">
+          <div class="table-wrap" style="padding:8px 10px">
+            <table class="table">
               <thead>
-                <tr class="border-b border-slate-800 text-slate-400 uppercase text-[11px]">
-                  <th class="py-2 px-3">Data</th>
-                  <th class="py-2 px-3">Ativo</th>
-                  <th class="py-2 px-3">Tipo</th>
-                  <th class="py-2 px-3 text-right">Qtd</th>
-                  <th class="py-2 px-3 text-right">Preço Unit.</th>
-                  <th class="py-2 px-3">Corretora</th>
-                  <th class="py-2 px-3 text-center">Excluir Ordem</th>
+                <tr>
+                  <th>Pagamento</th><th>Ativo</th><th>Tipo</th>
+                  <th class="r">Valor / cota</th><th class="r">Cotas</th><th class="r">Total</th><th></th>
                 </tr>
               </thead>
-              <tbody id="individual-transactions-tbody" class="divide-y divide-slate-800/60"></tbody>
+              <tbody id="dividends-tbody"></tbody>
             </table>
           </div>
         </div>
-      </div>
-    </section>
+      </section>
 
-    <!-- ==================== VIEW B: EXPLORADOR POR ABAS DE CLASSE (AÇÕES, FIIs, STOCKS, CRIPTO, ETFs) ==================== -->
-    <section id="view-MARKET_CLASS" class="hidden space-y-5">
-      <div class="glass-card rounded-2xl p-5">
-        <div class="flex flex-col md:flex-row md:items-center justify-between gap-4">
+      <!-- ==================== VIEW: RADAR IA & GRANDES OPORTUNIDADES ==================== -->
+      <section id="view-AI_RADAR" class="view hidden">
+        <div class="page-head">
           <div>
-            <h2 id="market-class-title" class="font-bold text-lg text-white">Explorador de Ativos</h2>
-            <p id="market-class-subtitle" class="text-xs text-slate-400">Clique em qualquer ativo para abrir o gráfico interativo (1D, 5D, 1M, 6M, 1A), dividendos por cota, notícias e relatórios IA</p>
+            <h2><span data-icon="sparkles" style="color:var(--accent);margin-right:10px"></span>Radar IA &amp; Oportunidades</h2>
+            <p>Análise contínua da sua carteira cruzada com múltiplos (Bazin &amp; Graham), radar de notícias e relatórios gerenciais oficiais da CVM e B3 Fundos.NET.</p>
           </div>
-
-          <!-- Filter: All vs Only Mine -->
-          <div class="flex items-center gap-2">
-            <button id="btn-filter-all" onclick="setPortfolioScope(false)" class="px-3 py-1.5 rounded-lg text-xs font-semibold bg-emerald-500 text-slate-950">
-              Mercado Geral
+          <div class="row gap-2 wrap">
+            <button class="btn btn-secondary" onclick="openAiSettingsModal()">
+              <span data-icon="settings"></span><span>Configurar IA (Gemini / OpenAI / Groq)</span>
             </button>
-            <button id="btn-filter-mine" onclick="setPortfolioScope(true)" class="px-3 py-1.5 rounded-lg text-xs font-semibold bg-slate-800 text-slate-300 hover:bg-slate-700">
-              Na Minha Carteira
+            <button class="btn btn-primary" onclick="loadAiRadarView(true)" id="btn-scan-radar">
+              <span data-icon="refresh"></span><span>Escanear Mercado Agora</span>
             </button>
           </div>
         </div>
 
-        <!-- Sorting Pills ("Em alta", "Em baixa", "Mais comprados", "Maior dividendo", "Mais descontados") -->
-        <div class="flex items-center gap-2 overflow-x-auto no-scrollbar mt-4 pt-3 border-t border-slate-800/80">
-          <span class="text-xs text-slate-400 font-medium mr-1 shrink-0">Ordenar por:</span>
-          <button onclick="setMarketSort('em_alta')" id="sort-em_alta" class="sort-pill pill-active px-3.5 py-1.5 rounded-full bg-slate-800 text-slate-300 text-xs transition shrink-0">
-            🚀 Em Alta
-          </button>
-          <button onclick="setMarketSort('em_baixa')" id="sort-em_baixa" class="sort-pill px-3.5 py-1.5 rounded-full bg-slate-800 text-slate-300 text-xs transition shrink-0">
-            📉 Em Baixa
-          </button>
-          <button onclick="setMarketSort('mais_comprados')" id="sort-mais_comprados" class="sort-pill px-3.5 py-1.5 rounded-full bg-slate-800 text-slate-300 text-xs transition shrink-0">
-            🔥 Mais Comprados (Volume)
-          </button>
-          <button onclick="setMarketSort('maior_dividendo')" id="sort-maior_dividendo" class="sort-pill px-3.5 py-1.5 rounded-full bg-slate-800 text-slate-300 text-xs transition shrink-0">
-            💰 Maior Dividendo (DY)
-          </button>
-          <button onclick="setMarketSort('mais_descontados')" id="sort-mais_descontados" class="sort-pill px-3.5 py-1.5 rounded-full bg-slate-800 text-slate-300 text-xs transition shrink-0">
-            🏷️ Mais Descontados (Menor P/VP)
-          </button>
-        </div>
-      </div>
-
-      <!-- Cards Grid of Assets -->
-      <div id="market-assets-grid" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4"></div>
-    </section>
-
-    <!-- ==================== VIEW C: PÁGINA EXCLUSIVA DO ATIVO (RAIO-X COMPLETO) ==================== -->
-    <section id="view-ASSET_DETAIL" class="hidden space-y-6">
-      <!-- Top Back Bar -->
-      <div class="flex items-center justify-between">
-        <button onclick="closeAssetDetail()" class="px-3.5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold flex items-center gap-2 border border-slate-700">
-          <span>←</span> Voltar para a Lista
-        </button>
-        <div class="flex items-center gap-2">
-          <button id="btn-detail-delete" class="hidden px-3.5 py-2 rounded-xl bg-rose-500/15 hover:bg-rose-500/25 text-rose-300 border border-rose-500/30 font-bold text-xs">
-            🗑️ Remover Ativo da Carteira
-          </button>
-          <button id="btn-detail-buy" class="px-4 py-2 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold text-xs">
-            + Lançar Compra deste Ativo
-          </button>
-        </div>
-      </div>
-
-      <!-- Block 1: Asset Header + Interactive Crosshair Evolution Chart (1D, 5D, 1M, 6M, 1Y) -->
-      <div class="glass-card rounded-2xl p-5 lg:p-6">
-        <div class="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-4 border-b border-slate-800">
-          <div>
-            <div class="flex items-center gap-2.5">
-              <span id="detail-ticker" class="text-2xl sm:text-3xl font-black text-white tracking-tight">PETR4</span>
-              <span id="detail-class-badge" class="px-2.5 py-0.5 rounded-md text-xs font-bold bg-emerald-500/15 text-emerald-400 border border-emerald-500/30">ACAO_BR</span>
-              <span id="detail-sector-badge" class="px-2.5 py-0.5 rounded-md text-xs bg-slate-800 text-slate-300">Setor</span>
-            </div>
-            <p id="detail-name" class="text-sm text-slate-400 mt-0.5">Nome da Empresa / Fundo Imobiliário</p>
-          </div>
-
-          <!-- Dynamic Price & Hover Readout -->
-          <div class="text-left md:text-right">
-            <div class="flex items-baseline md:justify-end gap-2">
-              <span id="detail-hover-price" class="text-2xl sm:text-3xl font-black text-white">R$ 0,00</span>
-              <span id="detail-hover-change" class="text-xs sm:text-sm font-bold px-2 py-0.5 rounded-md">0,00%</span>
-            </div>
-            <p id="detail-hover-date" class="text-xs text-slate-400 mt-0.5">Passe o mouse ou deslize o dedo sobre o gráfico para ver data e preço exatos</p>
-          </div>
-        </div>
-
-        <!-- Period Selector Buttons (1 Dia, 5 Dias, 1 Mês, 6 Meses, 1 Ano) -->
-        <div class="flex flex-wrap items-center justify-between gap-3 my-4">
-          <div class="flex items-center gap-1.5 bg-slate-900/90 p-1 rounded-xl border border-slate-800">
-            <button onclick="loadAssetDetailPeriod('1D')" id="period-1D" class="period-btn px-3 py-1.5 rounded-lg text-xs font-bold text-slate-300 hover:text-white transition">1 Dia</button>
-            <button onclick="loadAssetDetailPeriod('5D')" id="period-5D" class="period-btn px-3 py-1.5 rounded-lg text-xs font-bold text-slate-300 hover:text-white transition">5 Dias</button>
-            <button onclick="loadAssetDetailPeriod('1M')" id="period-1M" class="period-btn pill-active px-3 py-1.5 rounded-lg text-xs font-bold transition">1 Mês</button>
-            <button onclick="loadAssetDetailPeriod('6M')" id="period-6M" class="period-btn px-3 py-1.5 rounded-lg text-xs font-bold text-slate-300 hover:text-white transition">6 Meses</button>
-            <button onclick="loadAssetDetailPeriod('1Y')" id="period-1Y" class="period-btn px-3 py-1.5 rounded-lg text-xs font-bold text-slate-300 hover:text-white transition">1 Ano</button>
-          </div>
-          <div class="flex items-center gap-4 text-xs text-slate-400">
-            <span>Mín Período: <strong id="detail-low" class="text-slate-200">—</strong></span>
-            <span>Máx Período: <strong id="detail-high" class="text-slate-200">—</strong></span>
-            <span id="detail-user-pm-badge" class="hidden px-2.5 py-1 rounded-lg bg-amber-500/15 border border-amber-500/40 text-amber-300 font-semibold">
-              Seu Preço Médio: <strong id="detail-user-pm-val">R$ 0,00</strong>
-            </span>
-          </div>
-        </div>
-
-        <!-- Interactive Canvas Chart Container -->
-        <div class="relative w-full h-72 sm:h-80 bg-[#070b13] rounded-xl border border-slate-800/80 p-2 select-none">
-          <canvas id="asset-interactive-chart" class="w-full h-full cursor-crosshair"></canvas>
-        </div>
-
-        <!-- Fundamental Metrics Strip -->
-        <div id="detail-fundamentals-strip" class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 mt-4"></div>
-      </div>
-
-      <!-- Block 2: DIVIDENDO POR COTA & SIMULADOR + POSIÇÃO DO USUÁRIO -->
-      <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
-        <!-- Dividend Per Share Spotlight -->
-        <div class="lg:col-span-7 glass-card rounded-2xl p-5 border-l-4 border-l-emerald-500">
-          <div class="flex flex-wrap items-center justify-between gap-2 mb-4">
+        <!-- Card Executivo do Analista IA -->
+        <div id="ai-radar-briefing-card" class="card card-pad stack" style="gap:16px">
+          <div class="card-head" style="margin-bottom:0">
             <div>
-              <h3 class="font-bold text-base text-white flex items-center gap-2">
-                <span>💵</span> Dividendo / Rendimento Pago por Cota
-              </h3>
-              <p class="text-xs text-slate-400">Valor oficial distribuído por cada 1 cota/ação e histórico de 12 meses</p>
+              <div class="card-title"><span data-icon="sparkles"></span>Diagnóstico Diário da Carteira &amp; Mercado</div>
+              <div class="card-sub" id="ai-radar-engine-sub">Carregando inteligência analítica…</div>
             </div>
-            <span id="detail-div-yield-badge" class="px-3 py-1 rounded-full bg-emerald-500/15 text-emerald-400 font-bold text-xs border border-emerald-500/30">
-              DY 12M: 0,0%
-            </span>
+            <span id="ai-radar-badge" class="badge badge-accent">IA ATIVA</span>
           </div>
 
-          <div class="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-4">
-            <div class="p-3.5 rounded-xl bg-slate-900/90 border border-slate-800">
-              <span class="text-[11px] text-slate-400 uppercase font-semibold">Último Valor por Cota</span>
-              <div id="detail-div-per-share" class="text-2xl font-black text-emerald-400 mt-1">R$ 0,00</div>
-              <span id="detail-div-monthly-pct" class="text-[11px] text-slate-300">0,00% no mês</span>
-            </div>
-            <div class="p-3.5 rounded-xl bg-slate-900/90 border border-slate-800">
-              <span class="text-[11px] text-slate-400 uppercase font-semibold">Data Com (Data Base)</span>
-              <div id="detail-div-ex-date" class="text-base font-bold text-white mt-1.5">—</div>
-              <span class="text-[11px] text-slate-400">Direito ao provento</span>
-            </div>
-            <div class="p-3.5 rounded-xl bg-slate-900/90 border border-slate-800">
-              <span class="text-[11px] text-slate-400 uppercase font-semibold">Data de Pagamento</span>
-              <div id="detail-div-pay-date" class="text-base font-bold text-white mt-1.5">—</div>
-              <span class="text-[11px] text-emerald-400">Livre de IR (FII/Div)</span>
-            </div>
+          <!-- Alerta explícito de erro na IA quando configurada -->
+          <div id="ai-radar-error-box" class="hidden"></div>
+
+          <!-- Métricas de evolução diária da carteira -->
+          <div class="grid" id="ai-radar-daily-kpis" style="grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:14px"></div>
+
+          <div class="callout" style="background:var(--surface-2);border-color:var(--border-strong)">
+            <p id="ai-radar-executive-text" style="line-height:1.65;font-size:14px">Carregando parecer executivo…</p>
           </div>
 
-          <!-- 12-Month Dividend Per Share Bar Chart -->
-          <div class="mt-3">
-            <div class="text-xs font-semibold text-slate-300 mb-2">Evolução do Dividendo Pago por Cota (Últimos 12 Meses)</div>
-            <div id="detail-div-bars" class="grid grid-cols-12 gap-1.5 items-end h-28 pt-4 px-2 bg-slate-900/60 rounded-xl border border-slate-800/70"></div>
-          </div>
-        </div>
-
-        <!-- User Position & Dividend Simulator for this Asset -->
-        <div class="lg:col-span-5 glass-card rounded-2xl p-5 flex flex-col justify-between">
           <div>
-            <h3 class="font-bold text-base text-white mb-1 flex items-center gap-2">
-              <span>🧮</span> Sua Posição & Simulador de Renda Passiva
-            </h3>
-            <p class="text-xs text-slate-400 mb-4">Veja quanto suas cotas rendem ou simule qualquer quantidade de cotas:</p>
-
-            <div id="detail-user-pos-box" class="p-3.5 rounded-xl bg-slate-900/90 border border-slate-800 mb-4 space-y-2 text-xs"></div>
-
-            <div class="p-4 rounded-xl bg-emerald-950/20 border border-emerald-500/30 space-y-3">
-              <label class="block text-xs font-semibold text-emerald-300">
-                Simular Quantidade de Cotas / Ações:
-              </label>
-              <input type="number" id="sim-shares-input" value="100" min="1" step="10" oninput="updateDividendSimulator()"
-                class="w-full px-3 py-2 rounded-lg bg-slate-900 border border-slate-700 text-white font-bold text-sm focus:outline-none focus:border-emerald-500" />
-              <div class="grid grid-cols-2 gap-2 pt-1 text-xs">
-                <div>
-                  <span class="text-slate-400 block">Investimento Neces.:</span>
-                  <strong id="sim-invested-needed" class="text-white text-sm">R$ 0,00</strong>
-                </div>
-                <div>
-                  <span class="text-slate-400 block">Dividendo por Mês/Pagto:</span>
-                  <strong id="sim-monthly-income" class="text-emerald-400 text-base font-black">R$ 0,00</strong>
-                </div>
-              </div>
-            </div>
+            <div class="eyebrow" style="margin-bottom:8px">Recomendações Táticas do Analista para Hoje</div>
+            <div id="ai-radar-actions-list" class="stack" style="gap:8px"></div>
           </div>
         </div>
-      </div>
 
-      <!-- Block 3: RELATÓRIOS GERENCIAIS (B3 / FUNDOS.NET) + INTERPRETAÇÃO AUTOMÁTICA POR IA & NOTÍCIAS -->
-      <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
-        <!-- AI Report Analyzer & Official B3 Documents -->
-        <div class="lg:col-span-7 glass-card rounded-2xl p-5 space-y-4">
-          <div class="flex flex-wrap items-center justify-between gap-2">
+        <!-- Alertas específicos da carteira (Ativos em custódia) -->
+        <div class="card card-pad stack" style="gap:14px">
+          <div class="card-head" style="margin-bottom:0">
             <div>
-              <h3 class="font-bold text-base text-white flex items-center gap-2">
-                <span>🤖</span> Leitura Automática de Relatórios Oficiais (B3 / CVM)
+              <div class="card-title"><span data-icon="alert"></span>Alertas Ativos da Sua Carteira</div>
+              <div class="card-sub">Notícias de alto impacto, oscilações fortes e oportunidades de redução de Preço Médio</div>
+            </div>
+            <span id="ai-radar-alerts-count" class="badge">0 alertas</span>
+          </div>
+          <div id="ai-radar-portfolio-alerts" class="stack" style="gap:10px"></div>
+        </div>
+
+        <!-- Top Oportunidades do Mercado (Score + Bazin/Graham + Relatórios) -->
+        <div class="stack" style="gap:14px">
+          <div class="page-head">
+            <div>
+              <h3 style="font-size:22px;font-weight:600;display:flex;align-items:center;gap:8px">
+                <span data-icon="target" style="color:var(--accent)"></span>Grandes Oportunidades Detectadas
               </h3>
-              <p class="text-xs text-slate-400">Extração automática dos Relatórios Gerenciais, Fatos Relevantes e Avisos aos Cotistas</p>
+              <p>Ativos com desconto patrimonial, margem de segurança de Graham/Bazin e relatórios oficiais consistentes.</p>
             </div>
-            <button onclick="reanalyzeAssetReport()" id="btn-reanalyze-ai" class="px-3 py-1.5 rounded-lg bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 border border-emerald-500/30 text-xs font-bold transition">
-              ✨ Reinterpretar Relatório
-            </button>
           </div>
-
-          <!-- AI Interpretation Box -->
-          <div id="detail-ai-report-box" class="space-y-4"></div>
-
-          <!-- Official PDF Links List -->
-          <div class="pt-3 border-t border-slate-800">
-            <h4 class="text-xs font-bold uppercase text-slate-400 mb-2.5">Documentos Oficiais Recentes (B3 Fundos.NET / RAD CVM)</h4>
-            <div id="detail-official-docs-list" class="space-y-2"></div>
-          </div>
+          <div id="ai-radar-opportunities-grid" class="grid grid-cards" style="grid-template-columns:repeat(auto-fit,minmax(360px,1fr))"></div>
         </div>
+      </section>
 
-        <!-- Automatic Real-Time News Feed for this Asset -->
-        <div class="lg:col-span-5 glass-card rounded-2xl p-5 flex flex-col justify-between">
-          <div>
-            <div class="flex items-center justify-between mb-3">
-              <div>
-                <h3 class="font-bold text-base text-white flex items-center gap-2">
-                  <span>📰</span> Radar de Notícias do Ativo
-                </h3>
-                <p class="text-xs text-slate-400">Verificação automática com análise de sentimento</p>
-              </div>
-              <span id="detail-news-sentiment-badge" class="px-2.5 py-1 rounded-full text-[11px] font-bold bg-emerald-500/15 text-emerald-400">
-                NEUTRO
-              </span>
-            </div>
-            <div id="detail-news-list" class="space-y-2.5"></div>
-          </div>
-        </div>
-      </div>
-    </section>
-
-    <!-- ==================== VIEW D: RENDA FIXA & TESOURO DIRETO ==================== -->
-    <section id="view-RENDA_FIXA" class="hidden space-y-5">
-      <div class="glass-card rounded-2xl p-5">
-        <div class="flex flex-wrap items-center justify-between gap-3 mb-4">
-          <div>
-            <h2 class="font-bold text-lg text-white">Renda Fixa, Tesouro Direto & Caixinhas (CDI / Selic / IPCA+)</h2>
-            <p class="text-xs text-slate-400">Cálculo diário automático pela taxa oficial do Banco Central já descontando a alíquota regressiva de IR (22,5% a 15%)</p>
-          </div>
-          <button onclick="openFixedIncomeModal()" class="px-4 py-2 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold text-xs">
-            + Adicionar Título / Caixinha
-          </button>
-        </div>
-        <div id="fixed-income-list" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4"></div>
-      </div>
-    </section>
-
-    <!-- ==================== VIEW E: MAPA DE DIVIDENDOS & PROVENTOS ==================== -->
-    <section id="view-DIVIDENDS" class="hidden space-y-5">
-      <div class="glass-card rounded-2xl p-5">
-        <div class="flex flex-wrap items-center justify-between gap-3 mb-4">
-          <div>
-            <h2 class="font-bold text-lg text-white">Histórico de Dividendos e Proventos Recebidos</h2>
-            <p class="text-xs text-slate-400">Controle de renda passiva isenta de IR (FIIs e Dividendos) e JCP</p>
-          </div>
-          <button onclick="openDividendModal()" class="px-4 py-2 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold text-xs">
-            + Registrar Dividendo Recebido
-          </button>
-        </div>
-        <div class="overflow-x-auto">
-          <table class="w-full text-left border-collapse text-xs sm:text-sm">
-            <thead>
-              <tr class="border-b border-slate-800 text-slate-400 text-[11px] uppercase">
-                <th class="py-2.5 px-3">Data Pagto</th>
-                <th class="py-2.5 px-3">Ativo</th>
-                <th class="py-2.5 px-3">Tipo</th>
-                <th class="py-2.5 px-3 text-right">Valor por Cota</th>
-                <th class="py-2.5 px-3 text-right">Qtd Cotas</th>
-                <th class="py-2.5 px-3 text-right">Total Recebido</th>
-                <th class="py-2.5 px-3 text-center">Ação</th>
-              </tr>
-            </thead>
-            <tbody id="dividends-tbody" class="divide-y divide-slate-800/60"></tbody>
-          </table>
-        </div>
-      </div>
-    </section>
-
-  </main>
-
-  <!-- 4. MOBILE BOTTOM NAVIGATION BAR (Para uso no celular estilo App Nativo) -->
-  <div class="md:hidden fixed bottom-0 left-0 right-0 bg-[#0b101d]/95 border-t border-slate-800 px-2 py-1.5 flex items-center justify-around z-40 backdrop-blur-lg">
-    <button onclick="switchMainTab('DASHBOARD')" class="flex flex-col items-center gap-0.5 text-[11px] text-slate-300 py-1 px-2">
-      <span class="text-base">📊</span>
-      <span>Carteira</span>
-    </button>
-    <button onclick="switchMainTab('ACAO_BR')" class="flex flex-col items-center gap-0.5 text-[11px] text-slate-300 py-1 px-2">
-      <svg class="w-5 h-3.5 inline-block rounded-[2px] shadow-sm" viewBox="0 0 28 20" fill="none"><rect width="28" height="20" rx="2" fill="#009B3A"/><path d="M14 2.5L25.5 10L14 17.5L2.5 10L14 2.5Z" fill="#FEDF00"/><circle cx="14" cy="10" r="4.2" fill="#002776"/><path d="M10.1 8.8C12.5 8.1 15.6 8.6 18.1 10.3" stroke="#FFFFFF" stroke-width="1" stroke-linecap="round"/></svg>
-      <span>Ações</span>
-    </button>
-    <button onclick="switchMainTab('FII')" class="flex flex-col items-center gap-0.5 text-[11px] text-slate-300 py-1 px-2">
-      <span class="text-base">🏢</span>
-      <span>FIIs</span>
-    </button>
-    <button onclick="switchMainTab('RENDA_FIXA')" class="flex flex-col items-center gap-0.5 text-[11px] text-slate-300 py-1 px-2">
-      <span class="text-base">🏦</span>
-      <span>Renda Fixa</span>
-    </button>
-    <button onclick="switchMainTab('DIVIDENDS')" class="flex flex-col items-center gap-0.5 text-[11px] text-slate-300 py-1 px-2">
-      <span class="text-base">💰</span>
-      <span>Proventos</span>
-    </button>
+    </main>
   </div>
+</div>
 
-  <!-- MODAL 1: ADICIONAR AÇÕES / FIIs / ETFs / STOCKS / CRIPTO NA CARTEIRA -->
-  <div id="modal-transaction" class="fixed inset-0 bg-black/75 hidden items-center justify-center z-50 p-4">
-    <div class="bg-[#111827] border border-slate-700 rounded-2xl max-w-lg w-full p-5 space-y-4 max-h-[92vh] overflow-y-auto">
-      <div class="flex items-center justify-between">
-        <div>
-          <h3 class="font-bold text-base text-white">Adicionar à Minha Carteira (FIIs, Ações, ETFs, Cripto)</h3>
-          <p class="text-[11px] text-slate-400">Informe o fundo ou ação que você comprou</p>
-        </div>
-        <button onclick="closeModal('modal-transaction')" class="text-slate-400 hover:text-white text-lg">✕</button>
+<!-- ============================== MOBILE BOTTOM NAV ============================== -->
+<nav class="bottom-nav">
+  <button class="bn-item is-active" data-tab="DASHBOARD" onclick="switchMainTab('DASHBOARD')"><span data-icon="wallet" data-size="20"></span>Carteira</button>
+  <button class="bn-item" data-tab="MARKET" onclick="switchMainTab(STATE.marketClass || 'ACAO_BR')"><span data-icon="compass" data-size="20"></span>Mercado</button>
+  <button class="bn-fab" onclick="openAddPicker()" aria-label="Novo lançamento"><span data-icon="plus" data-size="22"></span></button>
+  <button class="bn-item" data-tab="RENDA_FIXA" onclick="switchMainTab('RENDA_FIXA')"><span data-icon="piggy" data-size="20"></span>Renda fixa</button>
+  <button class="bn-item" data-tab="DIVIDENDS" onclick="switchMainTab('DIVIDENDS')"><span data-icon="coins" data-size="20"></span>Proventos</button>
+</nav>
+
+<!-- ============================== MODAL: ESCOLHER TIPO DE LANÇAMENTO ============================== -->
+<div id="modal-add-picker" class="modal">
+  <div class="modal-panel lg">
+    <div class="modal-head">
+      <div>
+        <div class="modal-title">O que você quer adicionar?</div>
+        <div class="modal-sub">Escolha o tipo de investimento ou registro</div>
+      </div>
+      <button class="btn-icon sm" onclick="closeModal('modal-add-picker')"><span data-icon="x"></span></button>
+    </div>
+    <div class="modal-body" id="add-picker-body"></div>
+  </div>
+</div>
+
+<!-- ============================== MODAL: AÇÕES / FIIs / ETFs / STOCKS / CRIPTO ============================== -->
+<div id="modal-transaction" class="modal">
+  <div class="modal-panel">
+    <div class="modal-head">
+      <div>
+        <div class="modal-title">Lançar operação</div>
+        <div class="modal-sub">Ações, FIIs, ETFs, stocks e cripto</div>
+      </div>
+      <button class="btn-icon sm" onclick="closeModal('modal-transaction')"><span data-icon="x"></span></button>
+    </div>
+    <div class="modal-body">
+      <div class="seg" style="width:100%">
+        <button type="button" class="seg-btn is-active" id="txtype-BUY" style="flex:1;justify-content:center" onclick="setTxType('BUY')"><span data-icon="plus" data-size="14"></span>Compra</button>
+        <button type="button" class="seg-btn" id="txtype-SELL" style="flex:1;justify-content:center" onclick="setTxType('SELL')"><span data-icon="minus" data-size="14"></span>Venda</button>
+      </div>
+      <input type="hidden" id="tx-type" value="BUY" />
+
+      <div>
+        <div class="field"><span class="label">Atalhos</span></div>
+        <div class="chips" id="tx-quick-picks"></div>
       </div>
 
-      <!-- Alternador rápido caso queira ir para Renda Fixa / Caixinha -->
-      <div class="flex items-center justify-between p-2 rounded-xl bg-slate-900 border border-slate-800 text-xs">
-        <span class="text-slate-300 font-medium">Quer adicionar Caixinha Nubank, CDB, LCI ou Tesouro IPCA+?</span>
-        <button onclick="closeModal('modal-transaction'); openFixedIncomeModal();" class="px-2.5 py-1 rounded-lg bg-purple-500/20 hover:bg-purple-500/30 text-purple-300 font-bold border border-purple-500/30 shrink-0">
-          Ir para Renda Fixa →
-        </button>
-      </div>
-
-      <!-- Sugestões Rápidas de Tickers -->
-      <div class="space-y-1.5">
-        <span class="text-[11px] text-slate-400 font-semibold block">Atalhos rápidos (clique para preencher):</span>
-        <div class="flex flex-wrap gap-1.5">
-          <button type="button" onclick="quickPickTicker('MXRF11','FII')" class="px-2 py-1 rounded bg-blue-500/15 hover:bg-blue-500/25 text-blue-300 border border-blue-500/30 text-[11px] font-bold">🏢 MXRF11</button>
-          <button type="button" onclick="quickPickTicker('HGLG11','FII')" class="px-2 py-1 rounded bg-blue-500/15 hover:bg-blue-500/25 text-blue-300 border border-blue-500/30 text-[11px] font-bold">🏢 HGLG11</button>
-          <button type="button" onclick="quickPickTicker('XPML11','FII')" class="px-2 py-1 rounded bg-blue-500/15 hover:bg-blue-500/25 text-blue-300 border border-blue-500/30 text-[11px] font-bold">🏢 XPML11</button>
-          <button type="button" onclick="quickPickTicker('KNCR11','FII')" class="px-2 py-1 rounded bg-blue-500/15 hover:bg-blue-500/25 text-blue-300 border border-blue-500/30 text-[11px] font-bold">🏢 KNCR11</button>
-          <button type="button" onclick="quickPickTicker('BTLG11','FII')" class="px-2 py-1 rounded bg-blue-500/15 hover:bg-blue-500/25 text-blue-300 border border-blue-500/30 text-[11px] font-bold">🏢 BTLG11</button>
-          <button type="button" onclick="quickPickTicker('PETR4','ACAO_BR')" class="px-2 py-1 rounded bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-300 border border-emerald-500/30 text-[11px] font-bold flex items-center gap-1"><svg class="w-3.5 h-2.5 inline-block rounded-[1px]" viewBox="0 0 28 20" fill="none"><rect width="28" height="20" rx="2" fill="#009B3A"/><path d="M14 2.5L25.5 10L14 17.5L2.5 10L14 2.5Z" fill="#FEDF00"/><circle cx="14" cy="10" r="4.2" fill="#002776"/></svg>PETR4</button>
-          <button type="button" onclick="quickPickTicker('BBAS3','ACAO_BR')" class="px-2 py-1 rounded bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-300 border border-emerald-500/30 text-[11px] font-bold flex items-center gap-1"><svg class="w-3.5 h-2.5 inline-block rounded-[1px]" viewBox="0 0 28 20" fill="none"><rect width="28" height="20" rx="2" fill="#009B3A"/><path d="M14 2.5L25.5 10L14 17.5L2.5 10L14 2.5Z" fill="#FEDF00"/><circle cx="14" cy="10" r="4.2" fill="#002776"/></svg>BBAS3</button>
-          <button type="button" onclick="quickPickTicker('VALE3','ACAO_BR')" class="px-2 py-1 rounded bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-300 border border-emerald-500/30 text-[11px] font-bold flex items-center gap-1"><svg class="w-3.5 h-2.5 inline-block rounded-[1px]" viewBox="0 0 28 20" fill="none"><rect width="28" height="20" rx="2" fill="#009B3A"/><path d="M14 2.5L25.5 10L14 17.5L2.5 10L14 2.5Z" fill="#FEDF00"/><circle cx="14" cy="10" r="4.2" fill="#002776"/></svg>VALE3</button>
-          <button type="button" onclick="quickPickTicker('WEGE3','ACAO_BR')" class="px-2 py-1 rounded bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-300 border border-emerald-500/30 text-[11px] font-bold flex items-center gap-1"><svg class="w-3.5 h-2.5 inline-block rounded-[1px]" viewBox="0 0 28 20" fill="none"><rect width="28" height="20" rx="2" fill="#009B3A"/><path d="M14 2.5L25.5 10L14 17.5L2.5 10L14 2.5Z" fill="#FEDF00"/><circle cx="14" cy="10" r="4.2" fill="#002776"/></svg>WEGE3</button>
-          <button type="button" onclick="quickPickTicker('ITUB4','ACAO_BR')" class="px-2 py-1 rounded bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-300 border border-emerald-500/30 text-[11px] font-bold flex items-center gap-1"><svg class="w-3.5 h-2.5 inline-block rounded-[1px]" viewBox="0 0 28 20" fill="none"><rect width="28" height="20" rx="2" fill="#009B3A"/><path d="M14 2.5L25.5 10L14 17.5L2.5 10L14 2.5Z" fill="#FEDF00"/><circle cx="14" cy="10" r="4.2" fill="#002776"/></svg>ITUB4</button>
-        </div>
-      </div>
-
-      <div class="grid grid-cols-2 gap-3 text-xs">
-        <div>
-          <label class="text-slate-400 block mb-1">Categoria do Ativo</label>
-          <select id="tx-class" onchange="updateTxCurrency()" class="w-full px-3 py-2 rounded-lg bg-slate-900 border border-slate-700 text-white font-semibold">
-            <option value="FII">🏢 Fundo Imobiliário (FII / Fiagro)</option>
-            <option value="ACAO_BR">🟢 Ação Brasileira (B3)</option>
-            <option value="ETF_BR">🌎 ETF listado na B3</option>
-            <option value="FUNDO_INV">📈 Fundo de Investimento (Cotas)</option>
-            <option value="STOCK_US">🔵 Stock / REIT EUA (USD)</option>
-            <option value="CRIPTO">₿ Criptomoeda (USD)</option>
-          </select>
-        </div>
-        <div>
-          <label class="text-slate-400 block mb-1">Operação</label>
-          <select id="tx-type" class="w-full px-3 py-2 rounded-lg bg-slate-900 border border-slate-700 text-white font-semibold">
-            <option value="BUY">Adicionar / Compra (+)</option>
-            <option value="SELL">Reduzir / Venda (-)</option>
-          </select>
-        </div>
-        <div class="col-span-2">
-          <label class="text-slate-400 block mb-1">Código do Ativo (Ticker na B3 ou Nome do Fundo)</label>
-          <div class="flex gap-2">
-            <input type="text" id="tx-ticker" onblur="lookupTickerPrice()" placeholder="Ex: MXRF11, GARE11, PETR4, BTC" class="flex-1 px-3 py-2 rounded-lg bg-slate-900 border border-slate-700 text-white uppercase font-bold" />
-            <button type="button" onclick="lookupTickerPrice()" id="btn-lookup-ticker" class="px-3 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-emerald-400 font-bold border border-slate-700 shrink-0">
-              🔍 Buscar Preço Atual
+      <div class="form-grid">
+        <div class="field span-2">
+          <label for="tx-ticker">Código do ativo</label>
+          <div class="row gap-2">
+            <input type="text" id="tx-ticker" class="input input-uc" onblur="lookupTickerPrice()" placeholder="MXRF11, PETR4, AAPL, BTC" style="flex:1" />
+            <button type="button" class="btn btn-secondary" onclick="lookupTickerPrice()" id="btn-lookup-ticker" style="height:40px">
+              <span data-icon="search"></span><span class="label-hide">Buscar preço</span>
             </button>
           </div>
-          <span id="tx-lookup-feedback" class="text-[11px] text-emerald-400 mt-1 block"></span>
+          <div id="tx-lookup-feedback" class="hint"></div>
         </div>
-        <div>
-          <label class="text-slate-400 block mb-1">Quantidade de Cotas / Ações</label>
-          <input type="number" id="tx-qty" step="any" oninput="updateTxTotalPreview()" placeholder="Ex: 100" class="w-full px-3 py-2 rounded-lg bg-slate-900 border border-slate-700 text-white font-bold" />
-        </div>
-        <div>
-          <label class="text-slate-400 block mb-1">Preço Pago por Cota / Preço Médio</label>
-          <input type="number" id="tx-price" step="any" oninput="updateTxTotalPreview()" placeholder="Ex: 9.95" class="w-full px-3 py-2 rounded-lg bg-slate-900 border border-slate-700 text-white font-bold" />
-        </div>
-        <div>
-          <label class="text-slate-400 block mb-1">Data da Compra</label>
-          <input type="date" id="tx-date" class="w-full px-3 py-2 rounded-lg bg-slate-900 border border-slate-700 text-white" />
-        </div>
-        <div>
-          <label class="text-slate-400 block mb-1">Corretora / Banco</label>
-          <input type="text" id="tx-broker" value="Nubank / XP" class="w-full px-3 py-2 rounded-lg bg-slate-900 border border-slate-700 text-white" />
-        </div>
-        <div class="col-span-2 hidden">
-          <select id="tx-currency">
-            <option value="BRL">BRL</option>
-            <option value="USD">USD</option>
+        <div class="field">
+          <label for="tx-class">Categoria</label>
+          <select id="tx-class" class="select" onchange="updateTxCurrency()">
+            <option value="FII">Fundo imobiliário (FII / Fiagro)</option>
+            <option value="ACAO_BR">Ação brasileira (B3)</option>
+            <option value="ETF_BR">ETF listado na B3</option>
+            <option value="FUNDO_INV">Fundo de investimento</option>
+            <option value="STOCK_US">Stock / REIT EUA (USD)</option>
+            <option value="CRIPTO">Criptomoeda (USD)</option>
           </select>
         </div>
+        <div class="field">
+          <label for="tx-date">Data da operação</label>
+          <input type="date" id="tx-date" class="input" />
+        </div>
+        <div class="field">
+          <label for="tx-qty">Quantidade</label>
+          <input type="number" id="tx-qty" class="input" step="any" oninput="updateTxTotalPreview()" placeholder="100" />
+        </div>
+        <div class="field">
+          <label for="tx-price">Preço por cota</label>
+          <input type="number" id="tx-price" class="input" step="any" oninput="updateTxTotalPreview()" placeholder="9,95" />
+        </div>
+        <div class="field span-2">
+          <label for="tx-broker">Corretora / banco</label>
+          <input type="text" id="tx-broker" class="input" value="Nubank / XP" />
+        </div>
+        <select id="tx-currency" class="hidden">
+          <option value="BRL">BRL</option>
+          <option value="USD">USD</option>
+        </select>
       </div>
 
-      <!-- Resumo do Valor Total da Compra -->
-      <div class="p-3 rounded-xl bg-emerald-950/25 border border-emerald-500/30 flex items-center justify-between text-xs">
-        <span class="text-slate-300">Valor Total Investido nesta Posição:</span>
-        <strong id="tx-total-preview" class="text-base font-black text-emerald-400">R$ 0,00</strong>
+      <div class="summary-box">
+        <span>Valor total da operação</span>
+        <strong id="tx-total-preview">R$ 0,00</strong>
       </div>
 
-      <div class="flex justify-end gap-2 pt-1">
-        <button onclick="closeModal('modal-transaction')" class="px-4 py-2 rounded-lg bg-slate-800 text-slate-300 text-xs font-semibold">Cancelar</button>
-        <button onclick="submitTransaction()" class="px-5 py-2 rounded-lg bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold text-xs shadow-lg">Salvar na Minha Carteira</button>
+      <div class="callout">
+        <span>Caixinha, CDB, LCI ou Tesouro?</span>
+        <button class="link" onclick="closeModal('modal-transaction'); openFixedIncomeModal();">Ir para renda fixa <span data-icon="arrow-right" data-size="14"></span></button>
       </div>
     </div>
+    <div class="modal-foot">
+      <button class="btn btn-ghost" onclick="closeModal('modal-transaction')">Cancelar</button>
+      <button class="btn btn-primary" onclick="submitTransaction()"><span data-icon="check"></span>Salvar na carteira</button>
+    </div>
   </div>
+</div>
 
-  <!-- MODAL 2: ADICIONAR RENDA FIXA / CAIXINHA NUBANK / CDB / LCI / TESOURO IPCA+ -->
-  <div id="modal-fixed-income" class="fixed inset-0 bg-black/75 hidden items-center justify-center z-50 p-4">
-    <div class="bg-[#111827] border border-slate-700 rounded-2xl max-w-lg w-full p-5 space-y-4 max-h-[92vh] overflow-y-auto">
-      <div class="flex items-center justify-between">
-        <div>
-          <h3 class="font-bold text-base text-white">Adicionar Caixinha, CDB, LCI/LCA ou Tesouro IPCA+</h3>
-          <p class="text-[11px] text-slate-400">Cálculo diário automático pelo CDI, Selic ou IPCA oficial do Banco Central</p>
-        </div>
-        <button onclick="closeModal('modal-fixed-income')" class="text-slate-400 hover:text-white text-lg">✕</button>
+<!-- ============================== MODAL: RENDA FIXA ============================== -->
+<div id="modal-fixed-income" class="modal">
+  <div class="modal-panel">
+    <div class="modal-head">
+      <div>
+        <div class="modal-title">Adicionar renda fixa</div>
+        <div class="modal-sub">Rendimento diário automático por CDI, Selic ou IPCA oficiais</div>
       </div>
-
-      <!-- Modelos Rápidos em 1 Clique -->
-      <div class="space-y-1.5">
-        <span class="text-[11px] text-slate-400 font-semibold block">Escolha um modelo rápido (preenche automaticamente):</span>
-        <div class="flex flex-wrap gap-1.5">
-          <button type="button" onclick="applyFixedIncomePreset('CAIXINHA_NUBANK')" class="px-2.5 py-1.5 rounded-lg bg-purple-500/20 hover:bg-purple-500/30 text-purple-300 border border-purple-500/40 text-xs font-bold">
-            💜 Caixinha Nubank (100% CDI)
-          </button>
-          <button type="button" onclick="applyFixedIncomePreset('CAIXINHA_TURBO')" class="px-2.5 py-1.5 rounded-lg bg-purple-500/15 hover:bg-purple-500/25 text-purple-200 border border-purple-500/30 text-xs font-semibold">
-            💜 Caixinha / Cofrinho (110% CDI)
-          </button>
-          <button type="button" onclick="applyFixedIncomePreset('CDB_CDI')" class="px-2.5 py-1.5 rounded-lg bg-indigo-500/20 hover:bg-indigo-500/30 text-indigo-300 border border-indigo-500/40 text-xs font-bold">
-            🏦 CDB Pós-Fixado (% CDI)
-          </button>
-          <button type="button" onclick="applyFixedIncomePreset('CDB_IPCA')" class="px-2.5 py-1.5 rounded-lg bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/40 text-xs font-bold">
-            📈 CDB / Título IPCA+
-          </button>
-          <button type="button" onclick="applyFixedIncomePreset('LCI_LCA')" class="px-2.5 py-1.5 rounded-lg bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 border border-emerald-500/40 text-xs font-bold">
-            🌾 LCI / LCA (Isento IR)
-          </button>
-          <button type="button" onclick="applyFixedIncomePreset('TESOURO_IPCA')" class="px-2.5 py-1.5 rounded-lg bg-cyan-500/20 hover:bg-cyan-500/30 text-cyan-300 border border-cyan-500/40 text-xs font-bold">
-            🏛️ Tesouro IPCA+
-          </button>
-          <button type="button" onclick="applyFixedIncomePreset('TESOURO_SELIC')" class="px-2.5 py-1.5 rounded-lg bg-cyan-500/15 hover:bg-cyan-500/25 text-cyan-200 border border-cyan-500/30 text-xs font-semibold">
-            🏛️ Tesouro Selic
-          </button>
+      <button class="btn-icon sm" onclick="closeModal('modal-fixed-income')"><span data-icon="x"></span></button>
+    </div>
+    <div class="modal-body">
+      <div>
+        <div class="field"><span class="label">Modelos rápidos</span></div>
+        <div class="chips" style="flex-wrap:wrap">
+          <button type="button" class="chip fi-preset" id="preset-CAIXINHA_NUBANK" onclick="applyFixedIncomePreset('CAIXINHA_NUBANK')">Caixinha 100% CDI</button>
+          <button type="button" class="chip fi-preset" id="preset-CAIXINHA_TURBO" onclick="applyFixedIncomePreset('CAIXINHA_TURBO')">Caixinha 110% CDI</button>
+          <button type="button" class="chip fi-preset" id="preset-CDB_CDI" onclick="applyFixedIncomePreset('CDB_CDI')">CDB % CDI</button>
+          <button type="button" class="chip fi-preset" id="preset-CDB_IPCA" onclick="applyFixedIncomePreset('CDB_IPCA')">CDB IPCA+</button>
+          <button type="button" class="chip fi-preset" id="preset-LCI_LCA" onclick="applyFixedIncomePreset('LCI_LCA')">LCI / LCA</button>
+          <button type="button" class="chip fi-preset" id="preset-TESOURO_IPCA" onclick="applyFixedIncomePreset('TESOURO_IPCA')">Tesouro IPCA+</button>
+          <button type="button" class="chip fi-preset" id="preset-TESOURO_SELIC" onclick="applyFixedIncomePreset('TESOURO_SELIC')">Tesouro Selic</button>
         </div>
       </div>
 
-      <div class="grid grid-cols-2 gap-3 text-xs">
-        <div>
-          <label class="text-slate-400 block mb-1">Categoria na Carteira</label>
-          <select id="fi-category" class="w-full px-3 py-2 rounded-lg bg-slate-900 border border-slate-700 text-white font-semibold">
-            <option value="CAIXINHA">💜 Caixinha / Reserva de Liquidez</option>
-            <option value="RENDA_FIXA">🏦 CDB / LCI / LCA / Debênture</option>
-            <option value="TESOURO">🏛️ Tesouro Direto (IPCA+ / Selic / Pré)</option>
-            <option value="FUNDO_INV">📈 Fundo de Renda Fixa / DI</option>
+      <div class="form-grid">
+        <div class="field span-2">
+          <label for="fi-name">Nome do investimento</label>
+          <input type="text" id="fi-name" class="input" placeholder="Reserva de emergência, CDB 110% CDI…" />
+        </div>
+        <div class="field">
+          <label for="fi-category">Categoria</label>
+          <select id="fi-category" class="select">
+            <option value="CAIXINHA">Caixinha / reserva</option>
+            <option value="RENDA_FIXA">CDB / LCI / LCA / Debênture</option>
+            <option value="TESOURO">Tesouro Direto</option>
+            <option value="FUNDO_INV">Fundo de renda fixa / DI</option>
           </select>
         </div>
-        <div>
-          <label class="text-slate-400 block mb-1">Banco / Instituição</label>
-          <input type="text" id="fi-issuer" value="Nubank" placeholder="Ex: Nubank, Inter, BTG, XP" class="w-full px-3 py-2 rounded-lg bg-slate-900 border border-slate-700 text-white font-semibold" />
+        <div class="field">
+          <label for="fi-issuer">Instituição</label>
+          <input type="text" id="fi-issuer" class="input" value="Nubank" placeholder="Nubank, Inter, BTG…" />
         </div>
-        <div class="col-span-2">
-          <label class="text-slate-400 block mb-1">Nome do Investimento</label>
-          <input type="text" id="fi-name" placeholder="Ex: Caixinha Reserva de Emergência, CDB 110% CDI, Tesouro IPCA+ 2029" class="w-full px-3 py-2 rounded-lg bg-slate-900 border border-slate-700 text-white font-bold" />
-        </div>
-        <div>
-          <label class="text-slate-400 block mb-1">Indexador de Rendimento</label>
-          <select id="fi-indexer" onchange="updateFiIndexerHint()" class="w-full px-3 py-2 rounded-lg bg-slate-900 border border-slate-700 text-white font-semibold">
-            <option value="CDI">% do CDI (Caixinhas, CDB, LCI)</option>
-            <option value="IPCA">IPCA + Taxa Fixa (% a.a.)</option>
-            <option value="SELIC">Taxa Selic (Tesouro Selic)</option>
-            <option value="PRE">Prefixado (% ao ano)</option>
+        <div class="field">
+          <label for="fi-indexer">Indexador</label>
+          <select id="fi-indexer" class="select" onchange="updateFiIndexerHint()">
+            <option value="CDI">% do CDI</option>
+            <option value="IPCA">IPCA + taxa</option>
+            <option value="SELIC">Selic + taxa</option>
+            <option value="PRE">Prefixado</option>
           </select>
         </div>
-        <div>
-          <label id="fi-rate-label" class="text-slate-400 block mb-1">Taxa (% do CDI — ex: 100)</label>
-          <input type="number" id="fi-rate" value="100" step="any" class="w-full px-3 py-2 rounded-lg bg-slate-900 border border-slate-700 text-white font-bold" />
+        <div class="field">
+          <label id="fi-rate-label" for="fi-rate">Taxa (% do CDI)</label>
+          <input type="number" id="fi-rate" class="input" value="100" step="any" />
         </div>
-        <div>
-          <label class="text-slate-400 block mb-1">Valor Aplicado / Saldo (R$)</label>
-          <input type="number" id="fi-amount" placeholder="Ex: 5000.00" step="any" class="w-full px-3 py-2 rounded-lg bg-slate-900 border border-slate-700 text-white font-bold text-sm" />
+        <div class="field">
+          <label for="fi-amount">Valor aplicado (R$)</label>
+          <input type="number" id="fi-amount" class="input" placeholder="5.000,00" step="any" style="font-weight:600" />
         </div>
-        <div>
-          <label class="text-slate-400 block mb-1">Data da Aplicação</label>
-          <input type="date" id="fi-start" class="w-full px-3 py-2 rounded-lg bg-slate-900 border border-slate-700 text-white" />
+        <div class="field">
+          <label for="fi-market-value">Saldo atualizado hoje (R$) <span class="xs faint">(opcional)</span></label>
+          <input type="number" id="fi-market-value" class="input" placeholder="Se já rendeu na corretora" step="any" />
         </div>
-        <div>
-          <label class="text-slate-400 block mb-1">Vencimento (Opcional p/ Caixinha)</label>
-          <input type="date" id="fi-maturity" class="w-full px-3 py-2 rounded-lg bg-slate-900 border border-slate-700 text-white" />
+        <div class="field">
+          <label for="fi-start">Data da aplicação</label>
+          <input type="date" id="fi-start" class="input" />
         </div>
-        <div class="flex items-center pt-5">
-          <label class="flex items-center gap-2 text-slate-200 cursor-pointer font-medium">
-            <input type="checkbox" id="fi-exempt" class="rounded w-4 h-4 accent-emerald-500" /> Isento de IR (LCI / LCA / CRI / CRA)
+        <div class="field">
+          <label for="fi-maturity">Vencimento</label>
+          <input type="date" id="fi-maturity" class="input" />
+        </div>
+        <label class="check span-2">
+          <input type="checkbox" id="fi-exempt" /> Isento de IR (LCI, LCA, CRI, CRA)
+        </label>
+      </div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn btn-ghost" onclick="closeModal('modal-fixed-income')">Cancelar</button>
+      <button class="btn btn-primary" onclick="submitFixedIncome()"><span data-icon="check"></span>Salvar na carteira</button>
+    </div>
+  </div>
+</div>
+
+<!-- ============================== MODAL: AJUSTAR RENDA FIXA ============================== -->
+<div id="modal-adjust-fi" class="modal">
+  <div class="modal-panel sm">
+    <div class="modal-head">
+      <div>
+        <div class="modal-title">Ajustar Título de Renda Fixa</div>
+        <div class="modal-sub" id="fi-adj-title-sub">Atualize o valor aplicado ou saldo atualizado</div>
+      </div>
+      <button class="btn-icon sm" onclick="closeModal('modal-adjust-fi')"><span data-icon="x"></span></button>
+    </div>
+    <div class="modal-body">
+      <input type="hidden" id="fi-adj-id" />
+      <div class="form-grid">
+        <div class="field span-2">
+          <label for="fi-adj-amount">Valor Aplicado (Custo Original R$)</label>
+          <input type="number" id="fi-adj-amount" class="input" step="any" style="font-weight:600" />
+          <span class="xs muted">Quanto você efetivamente transferiu/pagou ao investir.</span>
+        </div>
+        <div class="field span-2">
+          <label for="fi-adj-market">Saldo Bruto Atualizado (R$)</label>
+          <input type="number" id="fi-adj-market" class="input" step="any" style="font-weight:600" />
+          <span class="xs muted">Saldo bruto informado pela sua corretora ou extrato da B3.</span>
+        </div>
+        <div class="field">
+          <label for="fi-adj-start">Data da Aplicação</label>
+          <input type="date" id="fi-adj-start" class="input" />
+          <span class="xs muted">Usada para calcular a alíquota regressiva do IR.</span>
+        </div>
+        <div class="field">
+          <label for="fi-adj-rate">Taxa Contratada</label>
+          <input type="number" id="fi-adj-rate" class="input" step="any" />
+          <span class="xs muted">% do CDI ou % a.a.</span>
+        </div>
+      </div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn btn-ghost" onclick="closeModal('modal-adjust-fi')">Cancelar</button>
+      <button class="btn btn-primary" onclick="submitAdjustFixedIncome()"><span data-icon="check"></span>Salvar Alterações</button>
+    </div>
+  </div>
+</div>
+
+<!-- ============================== MODAL: PROVENTO ============================== -->
+<div id="modal-dividend" class="modal">
+  <div class="modal-panel sm">
+    <div class="modal-head">
+      <div>
+        <div class="modal-title">Registrar provento</div>
+        <div class="modal-sub">Dividendo, rendimento ou JCP recebido</div>
+      </div>
+      <button class="btn-icon sm" onclick="closeModal('modal-dividend')"><span data-icon="x"></span></button>
+    </div>
+    <div class="modal-body">
+      <div class="form-grid">
+        <div class="field">
+          <label for="div-ticker">Ativo</label>
+          <input type="text" id="div-ticker" class="input input-uc" placeholder="MXRF11" />
+        </div>
+        <div class="field">
+          <label for="div-date">Pagamento</label>
+          <input type="date" id="div-date" class="input" />
+        </div>
+        <div class="field">
+          <label for="div-per-share">Valor por cota (R$)</label>
+          <input type="number" id="div-per-share" class="input" step="any" placeholder="0,10" />
+        </div>
+        <div class="field">
+          <label for="div-qty">Quantidade de cotas</label>
+          <input type="number" id="div-qty" class="input" step="any" placeholder="350" />
+        </div>
+      </div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn btn-ghost" onclick="closeModal('modal-dividend')">Cancelar</button>
+      <button class="btn btn-primary" onclick="submitDividend()"><span data-icon="check"></span>Salvar provento</button>
+    </div>
+  </div>
+</div>
+
+<!-- ============================== MODAL: SINCRONIZAÇÃO B3 (EXCEL / CSV) ============================== -->
+<div id="modal-b3-sync" class="modal">
+  <div class="modal-panel lg" style="max-width:740px">
+    <div class="modal-head">
+      <div>
+        <div class="modal-title"><span data-icon="file-spreadsheet" data-size="18" style="color:var(--accent);margin-right:6px"></span>Sincronização com a B3 (Excel / CSV)</div>
+        <div class="modal-sub">Importe sua Posição, Negociações ou Proventos direto do portal <a href="https://www.investidor.b3.com.br/login" target="_blank" rel="noopener" class="link" style="text-decoration:underline;color:inherit"><strong class="muted">investidor.b3.com.br/login</strong></a> ou exporte sua carteira</div>
+      </div>
+      <button class="btn-icon sm" onclick="closeModal('modal-b3-sync')"><span data-icon="x"></span></button>
+    </div>
+
+    <div class="modal-body stack" style="gap:16px;max-height:74vh;overflow-y:auto">
+      <!-- Passo a passo rápido + Ações de Exportar/Modelo -->
+      <div class="b3-guide-bar">
+        <div class="stack" style="gap:4px">
+          <div class="xs strong" style="color:var(--accent)">💡 Como exportar e ter Preço Médio e Lucro 100% Exatos:</div>
+          <div class="xs muted">
+            <strong>1. Relatório de Negociação (Recomendado para Preço Médio Real):</strong> Acesse <a href="https://www.investidor.b3.com.br/login" target="_blank" rel="noopener" class="link" style="text-decoration:underline">investidor.b3.com.br/login</a> → <strong>Extratos → Negociação</strong> → filtre o período e baixe em Excel (.xlsx). Ele traz o histórico real das suas compras e preços de aquisição!
+          </div>
+          <div class="xs muted">
+            <strong>2. Relatório de Posição (Custódia):</strong> Na Área do Investidor B3 → <strong>Posição</strong>. A B3 traz apenas a quantidade e o preço de <em>fechamento</em> do dia (sem custo de compra). Ao importar Posição, o SIM preservará os Preços Médios já existentes e apenas ajustará as quantidades.
+          </div>
+        </div>
+        <div class="row gap-2 wrap" style="flex-shrink:0;align-items:flex-start">
+          <a href="/api/b3/export-xlsx" download class="btn btn-sm btn-secondary" title="Exportar todos os ativos atuais da sua carteira SIM em formato Excel B3">
+            <span data-icon="download" data-size="13"></span><span>Exportar Carteira (.xlsx)</span>
+          </a>
+          <a href="/api/b3/template-xlsx" download class="btn btn-sm btn-ghost" title="Baixar uma planilha modelo pronta no formato da B3 com abas de Negociação e Posição">
+            <span data-icon="file-spreadsheet" data-size="13"></span><span>Baixar Modelo B3</span>
+          </a>
+        </div>
+      </div>
+
+      <!-- Modo de sincronização -->
+      <div>
+        <div class="field" style="margin-bottom:6px"><span class="label">Modo de sincronização ao importar</span></div>
+        <div class="seg" style="width:100%">
+          <button type="button" class="seg-btn is-active" id="b3mode-MERGE" style="flex:1;justify-content:center" onclick="setB3SyncMode('MERGE')">
+            <span data-icon="refresh" data-size="14"></span>
+            <span>Mesclar &amp; Atualizar sem duplicar (Recomendado)</span>
+          </button>
+          <button type="button" class="seg-btn" id="b3mode-REPLACE" style="flex:1;justify-content:center" onclick="setB3SyncMode('REPLACE')">
+            <span data-icon="layers" data-size="14"></span>
+            <span>Substituir carteira pela planilha</span>
+          </button>
+        </div>
+        <input type="hidden" id="b3-sync-mode" value="MERGE" />
+        <div id="b3-mode-hint" class="hint" style="margin-top:6px">
+          Reconcilia quantidades com a custódia da B3, preserva o seu Preço Médio contábil existente e ignora lançamentos duplicados.
+        </div>
+      </div>
+
+      <!-- Dropzone de arquivo -->
+      <div
+        id="b3-dropzone"
+        class="b3-dropzone"
+        onclick="document.getElementById('b3-file-input').click()"
+        ondragover="onB3DragOver(event)"
+        ondragleave="onB3DragLeave(event)"
+        ondrop="onB3Drop(event)"
+      >
+        <input type="file" id="b3-file-input" accept=".xlsx,.csv,.tsv" class="hidden" onchange="onB3FileSelected(this.files)" />
+        <div class="b3-drop-icon"><span data-icon="upload-cloud" data-size="28"></span></div>
+        <div class="strong" id="b3-drop-title">Arraste sua planilha da B3 (.xlsx ou .csv) aqui ou clique para selecionar</div>
+        <div class="xs faint" id="b3-drop-sub">Suporta relatórios de Posição Consolidada, Negociação (Compras/Vendas) e Movimentação (Proventos)</div>
+      </div>
+
+      <!-- Painel de Preview do Arquivo Lido -->
+      <div id="b3-preview-container" class="hidden stack" style="gap:12px"></div>
+
+      <!-- Histórico recente de sincronizações B3 -->
+      <div id="b3-logs-section" class="stack" style="gap:8px">
+        <div class="eyebrow">Histórico de sincronizações B3</div>
+        <div id="b3-logs-list" class="xs faint">Nenhuma sincronização registrada ainda.</div>
+      </div>
+    </div>
+
+    <div class="modal-foot">
+      <button class="btn btn-ghost" onclick="closeModal('modal-b3-sync')">Fechar</button>
+      <button class="btn btn-primary" id="btn-confirm-b3-sync" onclick="confirmB3Sync()" disabled>
+        <span data-icon="check"></span><span>Confirmar Sincronização B3</span>
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- ============================== MODAL: AJUSTAR PREÇO MÉDIO ============================== -->
+<div id="modal-adjust-avg-price" class="modal">
+  <div class="modal-panel" style="max-width:440px">
+    <div class="modal-head">
+      <div>
+        <div class="modal-title"><span data-icon="edit-3" data-size="18" style="color:var(--accent);margin-right:6px"></span>Ajustar Preço Médio</div>
+        <div class="modal-sub" id="adjust-pm-sub">Defina o custo médio contábil da sua posição</div>
+      </div>
+      <button class="btn-icon sm" onclick="closeModal('modal-adjust-avg-price')"><span data-icon="x"></span></button>
+    </div>
+    <form onsubmit="submitAdjustAvgPrice(event)" class="modal-body stack" style="gap:14px">
+      <input type="hidden" id="adjust-pm-ticker" value="" />
+      
+      <div class="callout" style="border-color:color-mix(in srgb, var(--accent) 30%, var(--border))">
+        <div class="xs faint" id="adjust-pm-info">Ativo em custódia.</div>
+      </div>
+
+      <div class="field">
+        <label class="label" for="adjust-pm-input">Novo Preço Médio (R$)</label>
+        <div class="input-prefix-wrap">
+          <span class="input-prefix">R$</span>
+          <input type="number" id="adjust-pm-input" step="0.01" min="0.01" required class="input" style="padding-left:36px;font-size:16px;font-weight:600" />
+        </div>
+        <span class="hint">Altera o valor total investido e o cálculo de rentabilidade real sem alterar a quantidade de cotas.</span>
+      </div>
+
+      <div class="modal-foot" style="padding:0;margin-top:6px">
+        <button type="button" class="btn btn-ghost" onclick="closeModal('modal-adjust-avg-price')">Cancelar</button>
+        <button type="submit" class="btn btn-primary" id="btn-save-adjust-pm">
+          <span data-icon="check"></span><span>Salvar Preço Médio</span>
+        </button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- ============================== MODAL: CONFIGURAÇÕES DE IA & ALERTA ============================== -->
+<div id="modal-ai-settings" class="modal">
+  <div class="modal-panel" style="max-width:620px">
+    <div class="modal-head">
+      <div>
+        <div class="modal-title"><span data-icon="sparkles" data-size="18" style="color:var(--accent);margin-right:6px"></span>Configurações do Analista IA</div>
+        <div class="modal-sub">Configure sua chave de IA (Gemini, Groq ou OpenAI) para análises e relatórios</div>
+      </div>
+      <button class="btn-icon sm" onclick="closeModal('modal-ai-settings')"><span data-icon="x"></span></button>
+    </div>
+
+    <div class="modal-body stack" style="gap:16px">
+      <div class="callout" style="border-color:color-mix(in srgb, var(--accent) 30%, var(--border))">
+        <span class="xs">
+          <strong>Uso com amigos:</strong> Você ou qualquer amigo que usar o aplicativo pode colocar sua própria chave gratuita.
+          Recomendamos a chave gratuita do <strong>Google AI Studio (Gemini)</strong> disponível em
+          <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener" class="link" style="text-decoration:underline">aistudio.google.com/apikey</a>.
+          <br/>
+          Para sincronizar suas ações, acesse sua conta no portal oficial:
+          <a href="https://www.investidor.b3.com.br/login" target="_blank" rel="noopener" class="link" style="text-decoration:underline;color:var(--accent);font-weight:600">investidor.b3.com.br/login</a>.
+        </span>
+      </div>
+
+      <div class="form-grid">
+        <div class="field">
+          <label for="ai-setting-provider">Provedor de IA</label>
+          <select id="ai-setting-provider" class="select" onchange="onAiProviderChanged()">
+            <option value="GEMINI">Google Gemini (Recomendado)</option>
+            <option value="GROQ">Groq Cloud (Llama 3.3)</option>
+            <option value="OPENAI">OpenAI (ChatGPT / GPT-4o)</option>
+          </select>
+        </div>
+
+        <div class="field">
+          <label for="ai-setting-model">Modelo do Analista</label>
+          <input type="text" id="ai-setting-model" class="input" value="gemini-2.5-flash" />
+          <div class="xs faint" id="ai-model-hint" style="margin-top:4px">Modelos sugeridos: gemini-2.5-flash, gemini-2.5-pro</div>
+        </div>
+
+        <div class="field span-2">
+          <label for="ai-setting-apikey">API Key da IA</label>
+          <div class="row gap-2">
+            <input type="password" id="ai-setting-apikey" class="input" placeholder="Cole sua chave de API aqui" style="flex:1" />
+            <button type="button" class="btn btn-secondary" onclick="toggleApiKeyVisibility()" id="btn-show-key">
+              <span data-icon="eye" data-size="14"></span>
+            </button>
+          </div>
+          <div id="ai-key-status" class="xs faint" style="margin-top:4px">Nenhuma chave salva.</div>
+        </div>
+
+        <div class="field">
+          <label for="ai-setting-profile">Seu Perfil de Investidor</label>
+          <select id="ai-setting-profile" class="select">
+            <option value="RENDA_E_VALOR">Renda Passiva &amp; Valor Descontado</option>
+            <option value="DIVIDENDOS">Foco em Dividendos / Renda Máxima</option>
+            <option value="CRESCIMENTO">Crescimento &amp; Valorização (Total Return)</option>
+            <option value="MODERADO">Equilibrado / Moderado</option>
+          </select>
+        </div>
+
+        <div class="field">
+          <label for="ai-setting-mindy">DY Mínimo Desejado (% a.a.)</label>
+          <input type="number" id="ai-setting-mindy" class="input" step="0.5" value="8.0" />
+        </div>
+      </div>
+
+      <!-- Teste de conexão da IA -->
+      <div class="card card-pad" style="background:var(--surface-2);padding:14px">
+        <div class="row between wrap gap-2">
+          <div>
+            <div class="xs strong">Teste de Comunicação com a IA</div>
+            <div class="xs faint">Valida sua chave chamando o modelo em tempo real</div>
+          </div>
+          <button type="button" class="btn btn-sm btn-secondary" onclick="runAiTest()" id="btn-test-ai">
+            <span data-icon="sparkles" data-size="13"></span><span>Testar Chave Agora</span>
+          </button>
+        </div>
+        <div id="ai-test-feedback" class="xs hint" style="margin-top:8px"></div>
+      </div>
+
+      <div class="divider"></div>
+
+      <!-- SEGURANÇA & CONTAS -->
+      <div class="card card-pad" style="background:var(--surface-2);padding:14px">
+        <div class="row between wrap gap-2">
+          <div>
+            <div class="strong" style="font-size:14px;display:flex;align-items:center;gap:6px">
+              <span data-icon="shield-check" data-size="16" style="color:var(--accent)"></span>Segurança &amp; Contas de Usuário
+            </div>
+            <div class="xs faint" style="margin-top:2px">Sua carteira, transações e chaves de API são 100% isoladas por usuário e protegidas por PIN</div>
+          </div>
+          <div class="row gap-2 wrap">
+            <button type="button" class="btn btn-sm btn-secondary" onclick="openChangePinModal()">
+              <span data-icon="key" data-size="13"></span><span>Alterar PIN</span>
+            </button>
+            <button type="button" class="btn btn-sm btn-secondary" onclick="openAuthModal('REGISTER')">
+              <span data-icon="user-plus" data-size="13"></span><span>Cadastrar Amigo</span>
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <div class="divider"></div>
+
+      <!-- CONFIGURAÇÃO DO WHATSAPP -->
+      <div class="stack" style="gap:10px">
+        <div class="row between wrap gap-2">
+          <div>
+            <div class="strong" style="font-size:14px;display:flex;align-items:center;gap:6px">
+              <span data-icon="message-circle" data-size="16" style="color:var(--accent)"></span>Notificações no WhatsApp
+            </div>
+            <div class="xs faint">Envio automático do fechamento diário e oportunidades no seu celular</div>
+          </div>
+          <label class="check">
+            <input type="checkbox" id="wa-setting-enabled" /> Ativar WhatsApp
           </label>
         </div>
+
+        <div class="form-grid">
+          <div class="field">
+            <label for="wa-setting-provider">Provedor WhatsApp</label>
+            <select id="wa-setting-provider" class="select" onchange="onWhatsAppProviderChanged()">
+              <option value="CALLMEBOT">CallMeBot (100% Gratuito Pessoal)</option>
+              <option value="EVOLUTION">Evolution API (Servidor Próprio)</option>
+              <option value="ZAPI">Z-API</option>
+              <option value="WEBHOOK">Webhook Personalizado</option>
+            </select>
+          </div>
+
+          <div class="field">
+            <label for="wa-setting-phone">Seu Número com DDD</label>
+            <input type="text" id="wa-setting-phone" class="input" placeholder="47999998888 ou 5547999998888" />
+          </div>
+
+          <div class="field span-2" id="wa-field-apikey">
+            <label for="wa-setting-apikey">API Key / Token WhatsApp</label>
+            <div class="row gap-2">
+              <input type="password" id="wa-setting-apikey" class="input" placeholder="Cole o token do CallMeBot ou da sua API" style="flex:1" />
+              <button type="button" class="btn btn-secondary" onclick="toggleWaKeyVisibility()" id="btn-show-wa-key">
+                <span data-icon="eye" data-size="14"></span>
+              </button>
+            </div>
+            <div id="wa-key-status" class="xs faint" style="margin-top:4px">Nenhuma chave de WhatsApp salva.</div>
+          </div>
+
+          <div class="field span-2 hidden" id="wa-field-url">
+            <label for="wa-setting-url">URL da API / Webhook</label>
+            <input type="text" id="wa-setting-url" class="input" placeholder="https://api.meuservidor.com ou http://localhost:8080" />
+          </div>
+
+          <div class="field hidden" id="wa-field-instance">
+            <label for="wa-setting-instance">Nome da Instância</label>
+            <input type="text" id="wa-setting-instance" class="input" placeholder="minha-instancia" />
+          </div>
+
+          <div class="field">
+            <label for="wa-setting-time">Horário do Relatório Diário</label>
+            <input type="time" id="wa-setting-time" class="input" value="18:30" />
+            <div id="wa-scheduler-status-hint" class="xs faint" style="margin-top:4px">Disparo automático em dias úteis a partir deste horário (pula fins de semana e feriados B3).</div>
+          </div>
+        </div>
+
+        <div class="callout xs faint" id="wa-callmebot-instructions" style="line-height:1.5">
+          <strong class="muted">Como ativar o CallMeBot em 10 segundos (Gratuito):</strong><br/>
+          1. Salve o contato <strong>+34 644 65 67 43</strong> no seu celular.<br/>
+          2. Envie a mensagem: <code>I allow callmebot to send me messages</code><br/>
+          3. O bot responderá com a sua <strong>API Key</strong>. Cole-a acima junto com o seu número!
+        </div>
+
+        <!-- Ações de teste e disparo -->
+        <div class="card card-pad" style="background:var(--surface-2);padding:14px">
+          <div class="row between wrap gap-2">
+            <div>
+              <div class="xs strong">Testes de Disparo no WhatsApp</div>
+              <div class="xs faint" id="wa-last-sent-hint">Nenhum envio registrado ainda.</div>
+            </div>
+            <div class="row gap-2 wrap">
+              <button type="button" class="btn btn-sm btn-secondary" onclick="testWhatsAppMessage()" id="btn-test-wa">
+                <span data-icon="send" data-size="13"></span><span>Enviar Teste</span>
+              </button>
+              <button type="button" class="btn btn-sm btn-primary" onclick="dispatchDailyWhatsAppNow()" id="btn-dispatch-wa">
+                <span data-icon="message-circle" data-size="13"></span><span>Enviar Relatório Agora</span>
+              </button>
+            </div>
+          </div>
+          <div id="wa-test-feedback" class="xs hint" style="margin-top:8px"></div>
+        </div>
       </div>
-      <div class="flex justify-end gap-2 pt-2">
-        <button onclick="closeModal('modal-fixed-income')" class="px-4 py-2 rounded-lg bg-slate-800 text-slate-300 text-xs font-semibold">Cancelar</button>
-        <button onclick="submitFixedIncome()" class="px-5 py-2 rounded-lg bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold text-xs shadow-lg">Salvar na Minha Carteira</button>
+    </div>
+
+    <div class="modal-foot">
+      <button class="btn btn-ghost" onclick="closeModal('modal-ai-settings')">Cancelar</button>
+      <button class="btn btn-primary" onclick="saveAiSettings()"><span data-icon="check"></span>Salvar Configurações</button>
+    </div>
+  </div>
+</div>
+
+<!-- ============================== MODAL: CELULAR ============================== -->
+<div id="modal-mobile" class="modal">
+  <div class="modal-panel sm">
+    <div class="modal-head">
+      <div>
+        <div class="modal-title">Use o SIM no celular</div>
+        <div class="modal-sub">Mesmo Wi-Fi do computador</div>
+      </div>
+      <button class="btn-icon sm" onclick="closeModal('modal-mobile')"><span data-icon="x"></span></button>
+    </div>
+    <div class="modal-body" style="text-align:center">
+      <img id="mobile-qr-img" src="" alt="QR Code" class="qr-img" />
+      <div id="mobile-url-box" class="url-box">http://192.168.x.x:8000</div>
+      <p class="faint small">No celular, toque em <strong class="muted">“Adicionar à tela de início”</strong> para instalar o SIM como um app em tela cheia.</p>
+      
+      <div class="callout xs" style="border-color:var(--accent);text-align:left;margin-top:12px;line-height:1.4">
+        <span data-icon="shield-check" data-size="14" style="color:var(--accent);margin-right:4px"></span>
+        <span><strong>Acesso Protegido:</strong> Qualquer dispositivo no seu Wi-Fi só acessa sua carteira e executa operações digitando o seu PIN pessoal de segurança.</span>
       </div>
     </div>
   </div>
+</div>
 
-  <!-- MODAL 3: NOVO DIVIDENDO RECEBIDO -->
-  <div id="modal-dividend" class="fixed inset-0 bg-black/75 hidden items-center justify-center z-50 p-4">
-    <div class="bg-[#111827] border border-slate-700 rounded-2xl max-w-md w-full p-5 space-y-4">
-      <div class="flex items-center justify-between">
-        <h3 class="font-bold text-base text-white">Registrar Provento / Dividendo Recebido</h3>
-        <button onclick="closeModal('modal-dividend')" class="text-slate-400 hover:text-white text-lg">✕</button>
+<!-- ============================== MODAL: AUTENTICAÇÃO / PIN ============================== -->
+<div id="modal-auth" class="modal" data-backdrop-close="false">
+  <div class="modal-panel sm" style="max-width:380px">
+    <div class="modal-head" style="justify-content:center;text-align:center">
+      <div>
+        <div class="brand-logo" style="margin:0 auto 8px;width:44px;height:44px;display:flex;align-items:center;justify-content:center;border-radius:12px;background:var(--surface-2)">
+          <span data-icon="shield-check" data-size="24" style="color:var(--accent)"></span>
+        </div>
+        <div class="modal-title" id="auth-modal-title">Desbloquear Carteira</div>
+        <div class="modal-sub" id="auth-modal-sub">Digite seu PIN de segurança pessoal</div>
       </div>
-      <div class="grid grid-cols-2 gap-3 text-xs">
-        <div>
-          <label class="text-slate-400 block mb-1">Ticker do Ativo</label>
-          <input type="text" id="div-ticker" placeholder="MXRF11" class="w-full px-3 py-2 rounded-lg bg-slate-900 border border-slate-700 text-white uppercase font-bold" />
-        </div>
-        <div>
-          <label class="text-slate-400 block mb-1">Data de Pagamento</label>
-          <input type="date" id="div-date" class="w-full px-3 py-2 rounded-lg bg-slate-900 border border-slate-700 text-white" />
-        </div>
-        <div>
-          <label class="text-slate-400 block mb-1">Valor por Cota (R$)</label>
-          <input type="number" id="div-per-share" step="any" placeholder="0.10" class="w-full px-3 py-2 rounded-lg bg-slate-900 border border-slate-700 text-white font-bold" />
-        </div>
-        <div>
-          <label class="text-slate-400 block mb-1">Quantidade de Cotas</label>
-          <input type="number" id="div-qty" step="any" placeholder="350" class="w-full px-3 py-2 rounded-lg bg-slate-900 border border-slate-700 text-white font-bold" />
-        </div>
+    </div>
+
+    <div class="modal-body stack" style="gap:14px;padding-top:10px">
+      <!-- Seletor de usuário (visível no modo login quando houver múltiplos usuários) -->
+      <div class="field" id="auth-user-field">
+        <label for="auth-user-select" class="xs faint">Usuário</label>
+        <select id="auth-user-select" class="select" onchange="onAuthUserChanged()"></select>
       </div>
-      <div class="flex justify-end gap-2 pt-2">
-        <button onclick="closeModal('modal-dividend')" class="px-4 py-2 rounded-lg bg-slate-800 text-slate-300 text-xs font-semibold">Cancelar</button>
-        <button onclick="submitDividend()" class="px-4 py-2 rounded-lg bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold text-xs">Salvar Provento</button>
+
+      <!-- Nome de usuário (visível no modo register / setup) -->
+      <div class="field hidden" id="auth-username-input-field">
+        <label for="auth-username-input" class="xs faint">Nome do Titular</label>
+        <input type="text" id="auth-username-input" class="input" placeholder="Seu nome (ex: Lucas)" />
+      </div>
+
+      <!-- PIN Display Visual (Dots) -->
+      <div class="pin-display-wrap">
+        <div class="pin-dots-row" id="pin-dots-container">
+          <div class="pin-dot" id="pdot-0"></div>
+          <div class="pin-dot" id="pdot-1"></div>
+          <div class="pin-dot" id="pdot-2"></div>
+          <div class="pin-dot" id="pdot-3"></div>
+          <div class="pin-dot hidden" id="pdot-4"></div>
+          <div class="pin-dot hidden" id="pdot-5"></div>
+        </div>
+        <input type="password" id="auth-pin-hidden-input" inputmode="numeric" maxlength="6" style="opacity:0;position:absolute;pointer-events:none" />
+      </div>
+
+      <!-- Campo de confirmação de PIN (apenas setup ou register) -->
+      <div class="field hidden" id="auth-pin-confirm-field">
+        <label for="auth-pin-confirm-input" class="xs faint">Confirme o PIN (4 a 6 dígitos)</label>
+        <input type="password" id="auth-pin-confirm-input" class="input" placeholder="Repita o PIN" maxlength="6" inputmode="numeric" />
+      </div>
+
+      <div id="auth-error-feedback" class="xs hint" style="color:var(--neg);text-align:center;min-height:18px"></div>
+
+      <!-- Teclado Numérico Virtual (Mobile & Desktop) -->
+      <div class="pin-keypad-grid" id="auth-keypad">
+        <button type="button" class="pin-btn" onclick="pressPinDigit('1')">1</button>
+        <button type="button" class="pin-btn" onclick="pressPinDigit('2')">2</button>
+        <button type="button" class="pin-btn" onclick="pressPinDigit('3')">3</button>
+        <button type="button" class="pin-btn" onclick="pressPinDigit('4')">4</button>
+        <button type="button" class="pin-btn" onclick="pressPinDigit('5')">5</button>
+        <button type="button" class="pin-btn" onclick="pressPinDigit('6')">6</button>
+        <button type="button" class="pin-btn" onclick="pressPinDigit('7')">7</button>
+        <button type="button" class="pin-btn" onclick="pressPinDigit('8')">8</button>
+        <button type="button" class="pin-btn" onclick="pressPinDigit('9')">9</button>
+        <button type="button" class="pin-btn action" onclick="clearPinInput()">Limpar</button>
+        <button type="button" class="pin-btn" onclick="pressPinDigit('0')">0</button>
+        <button type="button" class="pin-btn action" onclick="backspacePinDigit()"><span data-icon="arrow-left" data-size="16"></span></button>
+      </div>
+
+      <button type="button" class="btn btn-primary" id="btn-auth-submit" onclick="submitAuthModal()" style="width:100%;margin-top:6px">
+        <span data-icon="lock" data-size="14"></span><span id="btn-auth-submit-label">Desbloquear</span>
+      </button>
+
+      <div class="row between" style="margin-top:4px" id="auth-footer-links">
+        <button type="button" class="btn btn-link xs" id="btn-auth-toggle-mode" onclick="toggleAuthMode()">
+          Criar nova conta de amigo
+        </button>
       </div>
     </div>
   </div>
+</div>
 
-  <!-- MODAL 4: CONECTAR NO CELULAR (QR CODE PWA) -->
-  <div id="modal-mobile" class="fixed inset-0 bg-black/75 hidden items-center justify-center z-50 p-4">
-    <div class="bg-[#111827] border border-slate-700 rounded-2xl max-w-sm w-full p-6 text-center space-y-4">
-      <div class="flex items-center justify-between">
-        <h3 class="font-bold text-base text-white">📱 Usar o SIM no Celular</h3>
-        <button onclick="closeModal('modal-mobile')" class="text-slate-400 hover:text-white text-lg">✕</button>
+<!-- ============================== MODAL: ALTERAR PIN ============================== -->
+<div id="modal-change-pin" class="modal">
+  <div class="modal-panel sm" style="max-width:380px">
+    <div class="modal-head">
+      <div>
+        <div class="modal-title">Alterar PIN de Segurança</div>
+        <div class="modal-sub">Altere sua senha de acesso ao SIM</div>
       </div>
-      <p class="text-xs text-slate-300">
-        Com o celular conectado no mesmo Wi-Fi do computador, aponte a câmera para o QR Code abaixo ou acesse o endereço:
-      </p>
-      <div class="flex justify-center py-2">
-        <img id="mobile-qr-img" src="" alt="QR Code Celular" class="w-48 h-48 rounded-xl border-4 border-white bg-white p-1" />
-      </div>
-      <div id="mobile-url-box" class="px-3 py-2 rounded-lg bg-slate-900 border border-slate-700 font-mono text-sm text-emerald-400 font-bold select-all">
-        http://192.168.x.x:8000
-      </div>
-      <p class="text-[11px] text-slate-400">
-        💡 <strong>Dica:</strong> No celular, toque em <em>"Adicionar à Tela de Início"</em> (no Safari ou Chrome) para instalar o <strong>SIM</strong> como aplicativo nativo em tela cheia!
-      </p>
+      <button class="btn-icon sm" onclick="closeModal('modal-change-pin')"><span data-icon="x"></span></button>
     </div>
+    <form class="modal-body stack" style="gap:14px" onsubmit="submitChangePin(event)">
+      <div class="field">
+        <label for="chpin-current" class="xs faint">PIN Atual</label>
+        <input type="password" id="chpin-current" class="input" placeholder="Digite seu PIN atual" required maxlength="6" inputmode="numeric" />
+      </div>
+      <div class="field">
+        <label for="chpin-new" class="xs faint">Novo PIN (4 a 6 dígitos)</label>
+        <input type="password" id="chpin-new" class="input" placeholder="Novo PIN" required minlength="4" maxlength="6" inputmode="numeric" />
+      </div>
+      <div class="field">
+        <label for="chpin-confirm" class="xs faint">Confirme o Novo PIN</label>
+        <input type="password" id="chpin-confirm" class="input" placeholder="Confirme o novo PIN" required minlength="4" maxlength="6" inputmode="numeric" />
+      </div>
+      <div id="chpin-feedback" class="xs hint" style="color:var(--neg);min-height:18px"></div>
+      <div class="modal-foot" style="padding:10px 0 0;border:none">
+        <button type="button" class="btn btn-ghost" onclick="closeModal('modal-change-pin')">Cancelar</button>
+        <button type="submit" class="btn btn-primary"><span data-icon="check"></span>Atualizar PIN</button>
+      </div>
+    </form>
   </div>
+</div>
 
-  <!-- TOAST DE NOTIFICAÇÃO FLUTUANTE -->
-  <div id="toast-notification" class="fixed bottom-16 md:bottom-6 right-6 z-50 hidden px-4 py-3 rounded-xl bg-slate-900/95 border border-emerald-500/50 text-white text-xs sm:text-sm font-bold shadow-2xl flex items-center gap-2">
-    <span id="toast-text">Operação realizada!</span>
-  </div>
+<!-- ============================== TOAST ============================== -->
+<div id="toast-notification" class="toast" role="status" aria-live="polite">
+  <span data-icon="check-circle"></span><span id="toast-text">Operação realizada</span>
+</div>
 
-  <script src="/static/app.js"></script>
+<script src="/static/app.js?v=1.3"></script>
 </body>
 </html>
