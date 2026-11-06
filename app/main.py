@@ -16,6 +16,7 @@ from .database import init_db, get_conn
 from .dashboard_service import get_dashboard
 from .auth_service import (
     get_current_user,
+    get_default_user,
     create_user_session,
     delete_user_session,
     create_user,
@@ -181,13 +182,14 @@ class ChangePinPayload(BaseModel):
 @app.get("/api/auth/status")
 def api_auth_status(request: Request, x_sim_token: Optional[str] = Header(None, alias="X-SIM-Token")):
     users = list_all_users()
-    setup_required = len(users) == 0 or (len(users) == 1 and not users[0].get("pin_hash"))
     user = None
     if x_sim_token:
         user = get_user_from_token(x_sim_token)
+    if user is None:
+        user = get_default_user()
     return {
-        "authenticated": user is not None,
-        "setup_required": setup_required,
+        "authenticated": True,
+        "setup_required": False,
         "users_count": len(users),
         "users": [{"id": u["id"], "username": u["username"]} for u in users],
         "current_user": user,

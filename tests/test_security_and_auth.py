@@ -73,13 +73,15 @@ def test_unauthenticated_requests_rejected(tmp_path, monkeypatch):
 def test_auth_status_and_pin_setup_flow(tmp_path, monkeypatch):
     _setup_isolated_db(tmp_path, monkeypatch)
 
-    # 1. Status inicial: usuário Lucas criado sem PIN configurado ainda
+    # 1. Status inicial: acesso direto sem exigência de PIN/senha (authenticated=True, setup_required=False)
     r = client.get("/api/auth/status")
     assert r.status_code == 200
     data = r.json()
-    assert data["setup_required"] is True
+    assert data["setup_required"] is False
+    assert data["authenticated"] is True
+    assert data["current_user"]["username"] == "Lucas"
 
-    # 2. Configura PIN de segurança
+    # 2. Configura PIN opcional caso desejado via endpoint
     r_setup = client.post("/api/auth/setup", json={"username": "Lucas", "pin": "8520"})
     assert r_setup.status_code == 200
     res_setup = r_setup.json()

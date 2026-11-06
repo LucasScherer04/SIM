@@ -113,24 +113,6 @@
         <button class="btn-icon" id="btn-privacy" onclick="togglePrivacy()" title="Ocultar valores"><span data-icon="eye"></span></button>
         <button class="btn-icon" id="btn-theme" onclick="toggleTheme()" title="Alternar tema"><span data-icon="moon"></span></button>
         <button class="btn-icon" id="btn-ai-settings" onclick="openAiSettingsModal()" title="Configurações de IA &amp; WhatsApp"><span data-icon="settings"></span></button>
-        
-        <!-- Perfil do Usuário & Segurança -->
-        <div class="user-menu-container" id="user-menu-wrap" style="margin-left:4px">
-          <button class="btn-user-pill" id="btn-user-profile" onclick="toggleUserMenu(event)" title="Conta ativa e opções de segurança">
-            <span class="user-avatar-dot"></span>
-            <span id="topbar-username">Lucas</span>
-            <span data-icon="chevron-down" data-size="12"></span>
-          </button>
-          <div id="user-dropdown-menu" class="dropdown-menu hidden">
-            <div class="dropdown-header" id="user-dropdown-info">Conectado como Lucas</div>
-            <div class="divider" style="margin:2px 0"></div>
-            <button class="dropdown-item" onclick="openChangePinModal()"><span data-icon="key" data-size="14"></span><span>Alterar meu PIN</span></button>
-            <button class="dropdown-item" onclick="openAuthModal('REGISTER')"><span data-icon="user-plus" data-size="14"></span><span>Nova Conta (Amigo)</span></button>
-            <button class="dropdown-item" onclick="openAuthModal('LOGIN')"><span data-icon="users" data-size="14"></span><span>Trocar de Conta</span></button>
-            <div class="divider" style="margin:2px 0"></div>
-            <button class="dropdown-item danger" onclick="logoutCurrentUser()"><span data-icon="lock" data-size="14"></span><span>Bloquear Carteira</span></button>
-          </div>
-        </div>
 
         <button class="btn btn-secondary" onclick="openB3SyncModal()" style="margin-left:6px" title="Importar ou exportar planilha Excel da Área do Investidor B3">
           <span data-icon="file-spreadsheet"></span><span>Sincronizar B3</span>
@@ -1133,26 +1115,6 @@
 
       <div class="divider"></div>
 
-      <!-- SEGURANÇA & CONTAS -->
-      <div class="card card-pad" style="background:var(--surface-2);padding:14px">
-        <div class="row between wrap gap-2">
-          <div>
-            <div class="strong" style="font-size:14px;display:flex;align-items:center;gap:6px">
-              <span data-icon="shield-check" data-size="16" style="color:var(--accent)"></span>Segurança &amp; Contas de Usuário
-            </div>
-            <div class="xs faint" style="margin-top:2px">Sua carteira, transações e chaves de API são 100% isoladas por usuário e protegidas por PIN</div>
-          </div>
-          <div class="row gap-2 wrap">
-            <button type="button" class="btn btn-sm btn-secondary" onclick="openChangePinModal()">
-              <span data-icon="key" data-size="13"></span><span>Alterar PIN</span>
-            </button>
-            <button type="button" class="btn btn-sm btn-secondary" onclick="openAuthModal('REGISTER')">
-              <span data-icon="user-plus" data-size="13"></span><span>Cadastrar Amigo</span>
-            </button>
-          </div>
-        </div>
-      </div>
-
       <!-- BACKUP E RESTAURAÇÃO SQLITE (Etapa 5) -->
       <div class="card card-pad stack" style="background:var(--surface-2);padding:14px;gap:10px">
         <div class="row between wrap gap-2">
@@ -1285,11 +1247,6 @@
       <img id="mobile-qr-img" src="" alt="QR Code" class="qr-img" />
       <div id="mobile-url-box" class="url-box">http://192.168.x.x:8000</div>
       <p class="faint small">No celular, toque em <strong class="muted">“Adicionar à tela de início”</strong> para instalar o SIM como um app em tela cheia.</p>
-      
-      <div class="callout xs" style="border-color:var(--accent);text-align:left;margin-top:12px;line-height:1.4">
-        <span data-icon="shield-check" data-size="14" style="color:var(--accent);margin-right:4px"></span>
-        <span><strong>Acesso Protegido:</strong> Qualquer dispositivo no seu Wi-Fi só acessa sua carteira e executa operações digitando o seu PIN pessoal de segurança.</span>
-      </div>
     </div>
   </div>
 </div>

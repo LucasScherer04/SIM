@@ -180,7 +180,7 @@ function sanitizeUrl(url) {
   return "#";
 }
 
-/* ---------- Wrapper de API com Autenticação Token/PIN & CSRF Safe ---------- */
+/* ---------- Wrapper de API (acesso direto sem senha/PIN) ---------- */
 const _nativeFetch = window.fetch;
 window.fetch = async function (url, options = {}) {
   const isApi = typeof url === "string" && url.startsWith("/api/");
@@ -194,10 +194,12 @@ window.fetch = async function (url, options = {}) {
     options.headers = headers;
   }
   const res = await _nativeFetch(url, options);
-  if (isApi && res.status === 401 && !url.includes("/api/auth/status") && !url.includes("/api/auth/login") && !url.includes("/api/auth/setup")) {
+  if (isApi && res.status === 401) {
+    // Se havia um token antigo expirado no navegador, limpa e reexecuta direto sem senha
     localStorage.removeItem("sim_auth_token");
-    STATE.currentUser = null;
-    openAuthModal("LOGIN");
+    const retryOpts = { ...options, headers: new Headers(options.headers || {}) };
+    retryOpts.headers.delete("X-SIM-Token");
+    return _nativeFetch(url, retryOpts);
   }
   return res;
 };
@@ -5436,7 +5438,7 @@ async function restoreSystemBackupById(backupId) {
     }
     showToast("Banco restaurado com sucesso!");
     await loadSystemBackupsList();
-    await boot();
+    await refreshAll();
   } catch (err) {
     if (fb) fb.innerHTML = `<span class="neg strong">Falha na restauração: ${esc(err.message || "")}</span>`;
   }
@@ -5474,7 +5476,7 @@ async function onRestoreBackupFileSelected(files) {
     }
     showToast("Banco restaurado a partir do arquivo!");
     await loadSystemBackupsList();
-    await boot();
+    await refreshAll();
   } catch (err) {
     if (fb) fb.innerHTML = `<span class="neg strong">Erro ao restaurar arquivo: ${esc(err.message || "")}</span>`;
   } finally {
@@ -5671,19 +5673,11 @@ async function checkAuthStatus() {
   try {
     const res = await fetch("/api/auth/status");
     const data = await res.json();
-    if (data.setup_required) {
-      openAuthModal("SETUP");
-      return false;
-    }
-    if (!data.authenticated) {
-      openAuthModal("LOGIN");
-      return false;
-    }
-    setCurrentUser(data.current_user);
+    setCurrentUser(data.current_user || { id: 1, username: "Lucas" });
     return true;
   } catch (err) {
-    console.error("Erro ao verificar autenticação:", err);
-    return false;
+    setCurrentUser({ id: 1, username: "Lucas" });
+    return true;
   }
 }
 

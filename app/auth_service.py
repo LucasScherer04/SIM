@@ -183,13 +183,25 @@ def delete_user_session(token: str):
     conn.close()
 
 
+def get_default_user() -> Dict[str, Any]:
+    """Retorna o usuário titular padrão (sem exigência de PIN/senha para uso local)."""
+    conn = get_conn()
+    ensure_auth_tables(conn)
+    user_row = conn.execute("SELECT id, username, is_admin FROM users ORDER BY id ASC LIMIT 1").fetchone()
+    conn.close()
+    if user_row:
+        return dict(user_row)
+    return {"id": 1, "username": "Lucas", "is_admin": 1}
+
+
 def get_current_user(
     request: Request,
     x_sim_token: Optional[str] = Header(None, alias="X-SIM-Token"),
     authorization: Optional[str] = Header(None),
 ) -> Dict[str, Any]:
     """
-    Dependência FastAPI que garante autenticação e isolamento de usuário em rotas /api/*.
+    Dependência FastAPI que retorna o usuário ativo.
+    No uso local sem senha/PIN, autentica automaticamente no usuário titular padrão (id=1).
     """
     token = x_sim_token or authorization
     if token:
@@ -201,18 +213,4 @@ def get_current_user(
             detail="Sessão expirada ou PIN inválido. Faça login novamente.",
         )
 
-    # Durante execução de testes automatizados unitários pré-existentes, se nenhum token foi passado,
-    # permite fallback controlado para o usuário de teste id=1
-    if "PYTEST_CURRENT_TEST" in os.environ:
-        conn = get_conn()
-        user_row = conn.execute("SELECT id, username, is_admin FROM users WHERE id = 1").fetchone()
-        conn.close()
-        if user_row:
-            return dict(user_row)
-        return {"id": 1, "username": "test_user", "is_admin": 1}
-
-    # Em ambiente normal ou produção, autenticação é estritamente obrigatória
-    raise HTTPException(
-        status_code=401,
-        detail="Autenticação obrigatória. Forneça o cabeçalho X-SIM-Token.",
-    )
+    return get_default_user()
