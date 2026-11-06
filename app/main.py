@@ -1,4 +1,5 @@
 import os
+import json
 import socket
 import base64
 import urllib.parse
@@ -12,6 +13,7 @@ from pydantic import BaseModel
 import yfinance as yf
 
 from .database import init_db, get_conn
+from .dashboard_service import get_dashboard
 from .auth_service import (
     get_current_user,
     create_user_session,
@@ -328,6 +330,61 @@ class DividendCreate(BaseModel):
     currency: str = "BRL"
     # Câmbio BRL informado pelo usuário (opcional). Sem ele, a conversão usa o câmbio atual.
     fx_rate: Optional[float] = None
+
+
+def _csv_cell(v: Any) -> str:
+    """Neutraliza injecao de formula em planilhas (valores iniciados por = + - @)."""
+    s = "" if v is None else str(v)
+    return "'" + s if s[:1] in ("=", "+", "@") or (s[:1] == "-" and not s[1:2].isdigit()) else s
+
+
+@app.get("/api/dashboard")
+def api_dashboard(
+    period: str = Query("ALL"),
+    country: str = Query("ALL"),
+    currency: str = Query("ALL"),
+    asset_class: str = Query("ALL"),
+    current_user: Dict[str, Any] = Depends(get_current_user),
+):
+    return get_dashboard(current_user["id"], period, country, currency, asset_class)
+
+
+@app.get("/api/dashboard/export-csv")
+def api_dashboard_export_csv(
+    period: str = Query("ALL"),
+    country: str = Query("ALL"),
+    currency: str = Query("ALL"),
+    asset_class: str = Query("ALL"),
+    current_user: Dict[str, Any] = Depends(get_current_user),
+):
+    """CSV (separador ';', decimais com vírgula, UTF-8 com BOM p/ Excel) das posições com os filtros atuais."""
+    import csv
+    import io
+
+    data = get_dashboard(current_user["id"], period, country, currency, asset_class, record=False)
+    buf = io.StringIO()
+    w = csv.writer(buf, delimiter=";")
+    num = lambda x: "" if x is None else f"{float(x):.2f}".replace(".", ",")
+    w.writerow(["Código", "Nome", "Classe", "País", "Moeda", "Setor", "Investido (BRL)", "Valor atual (BRL)",
+                "Resultado (BRL)", "Resultado (%)", "Peso (%)"])
+    for h in data["holdings"]:
+        w.writerow([_csv_cell(h["code"]), _csv_cell(h["name"]), h["asset_class"], h["country"], h["currency"],
+                    _csv_cell(h["sector"]), num(h["invested_brl"]), num(h["current_brl"]), num(h["profit_brl"]),
+                    num(h["profit_pct"]), num(h["weight_pct"])])
+    k = data["kpis"]
+    w.writerow([])
+    w.writerow(["TOTAL", "", "", "", "", "", num(k["total_invested_brl"]), num(k["total_current_brl"]),
+                num(k["profit_brl"]), num(k["profit_pct"]), "100,00" if k["holdings_count"] else ""])
+    w.writerow([])
+    w.writerow(["Gerado em", data["generated_at"]])
+    w.writerow(["Câmbio USD/BRL", num(data["fx"]["usd_brl"]), data["fx"]["updated_at"] or "não atualizado", data["fx"]["source"]])
+    w.writerow(["Filtros", json.dumps(data["filters"], ensure_ascii=False)])
+    date_tag = datetime.now().strftime("%Y-%m-%d")
+    return Response(
+        content=("\ufeff" + buf.getvalue()).encode("utf-8"),
+        media_type="text/csv; charset=utf-8",
+        headers={"Content-Disposition": f'attachment; filename="SIM_posicoes_{date_tag}.csv"'},
+    )
 
 
 @app.get("/api/portfolio")

@@ -385,12 +385,16 @@ Limitações/pendências: (a) operações e proventos antigos ficam com `fx_esti
 
 ### Etapa 2 --- Dashboard
 
--   [ ] Patrimônio e evolução
--   [ ] Rentabilidade
--   [ ] Alocação e concentração
--   [ ] Proventos
--   [ ] Câmbio transparente
--   [ ] Exportações essenciais
+-   [x] Patrimônio e evolução (`app/dashboard_service.py`: snapshots diários em `portfolio_snapshots` + série de aportes líquidos reconstruída das operações e aplicações registradas)
+-   [x] Rentabilidade (resultado realizado/não realizado + retorno do período por Dietz modificado quando há ao menos 2 snapshots no período)
+-   [x] Alocação e concentração (distribuição por classe, país, moeda e setor; ranking top 10, Top 1/5/10% e índice HHI / posições equivalentes)
+-   [x] Proventos (agregação por mês, ano e ativo no período/filtro selecionado, preservando moedas originais e sinalizando câmbio estimado)
+-   [x] Câmbio transparente (exibição de taxa USD/BRL, origem, data/hora de atualização, quantidade de posições em USD e metodologia explícita)
+-   [x] Exportações essenciais (`GET /api/dashboard/export-csv` com filtros e blindagem contra injeção de fórmulas; correção do `KeyError: 'current_total_brl'` em `export_portfolio_b3_xlsx` e download autenticado via `downloadAuthed`)
+
+**Etapa 2 — concluída em 06/11/2026.**
+Arquivos alterados/criados: `app/database.py` (`migrate_snapshots_table` criando `portfolio_snapshots`), `app/market_service.py` (registro de `usd_brl_updated_at` quando a cotação é obtida da AwesomeAPI), `app/dashboard_service.py` (novo serviço consolidando KPIs, conciliação com o banco, distribuições por classe/país/moeda/setor, concentração HHI, proventos por mês/ano/ativo, evolução por aportes líquidos e snapshots, retorno Dietz modificado e qualidade de dados), `app/b3_sync_service.py` (correção de `current_total_brl` → `current_brl` na exportação `.xlsx`), `app/main.py` (`GET /api/dashboard` e `GET /api/dashboard/export-csv`), `static/index.html` e `static/app.js` (sub-aba **Análise** no dashboard com filtros de período/país/moeda/classe, gráficos/tabelas e função `downloadAuthed`), `tests/test_dashboard.py` (21 testes cobrindo conciliação, filtros, concentração, proventos, evolução, snapshots, câmbio e exportações CSV/XLSX).
+Limitações registradas com transparência: (a) o histórico de patrimônio diário passa a ser gravado a partir do primeiro dia de uso (não inventa cotações passadas); (b) a comparação com índices (IBOV/CDI/S&P 500) fica explicitamente sinalizada como indisponível até que as séries históricas de mercado sejam armazenadas na Etapa 3.
 
 ### Etapa 3 --- Dados e notícias
 

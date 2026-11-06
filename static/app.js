@@ -6,7 +6,7 @@ let STATE = {
   portfolio: null,
   currentTab: "DASHBOARD",
   previousTab: "DASHBOARD",
-  portfolioSubTab: "CHART", // 'CHART' | 'CATEGORIES'
+  portfolioSubTab: "CHART", // 'CHART' | 'CATEGORIES' | 'ANALYSIS'
   donutMode: "CATEGORY",    // 'CATEGORY' | 'ASSET'
   categoryListFilter: "ALL",
   marketClass: "ACAO_BR",
@@ -523,6 +523,7 @@ async function refreshAll(silent = false) {
     renderDashboard(data);
     renderFixedIncomeView(data.fixed_income);
     renderDividendsView(data.dividends);
+    if (STATE.portfolioSubTab === "ANALYSIS" && STATE.currentTab === "DASHBOARD") loadAnalysis();
     await loadRebalance();
 
     if (["ACAO_BR", "FII", "STOCK_US", "CRIPTO", "ETF_BR"].includes(STATE.currentTab)) {
@@ -571,24 +572,219 @@ function renderMacroTicker(m) {
 /* ---------- Sub-abas e Filtros da Carteira ---------- */
 function switchPortfolioSubTab(subTab) {
   STATE.portfolioSubTab = subTab;
-  const bChart = document.getElementById("subtab-CHART");
-  const bCat = document.getElementById("subtab-CATEGORIES");
-  const vChart = document.getElementById("portfolio-subview-CHART");
-  const vCat = document.getElementById("portfolio-subview-CATEGORIES");
+  const tabs = ["CHART", "CATEGORIES", "ANALYSIS"];
+  tabs.forEach(t => {
+    document.getElementById(`subtab-${t}`)?.classList.toggle("is-active", t === subTab);
+    document.getElementById(`portfolio-subview-${t}`)?.classList.toggle("hidden", t !== subTab);
+  });
 
   if (subTab === "CHART") {
-    bChart.classList.add("is-active");
-    bCat.classList.remove("is-active");
-    vChart.classList.remove("hidden");
-    vCat.classList.add("hidden");
     if (STATE.portfolio) renderPortfolioDonutAndBars(STATE.portfolio);
-  } else {
-    bCat.classList.add("is-active");
-    bChart.classList.remove("is-active");
-    vCat.classList.remove("hidden");
-    vChart.classList.add("hidden");
+  } else if (subTab === "CATEGORIES") {
     if (STATE.portfolio) renderCategorizedInvestments(STATE.portfolio);
+  } else {
+    loadAnalysis();
   }
+}
+
+/* ---------- Download autenticado (links <a download> não enviam o token) ---------- */
+async function downloadAuthed(url, fallbackName) {
+  try {
+    const res = await fetch(url);
+    if (!res.ok) {
+      let msg = `Falha ao baixar (HTTP ${res.status}).`;
+      try { msg = (await res.json()).detail || msg; } catch (_) { /* resposta não-JSON */ }
+      alert(msg);
+      return;
+    }
+    const cd = res.headers.get("Content-Disposition") || "";
+    const m = cd.match(/filename="?([^";]+)"?/i);
+    const blob = await res.blob();
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = m ? m[1] : fallbackName;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+  } catch (e) {
+    console.error("Erro no download:", e);
+    alert("Não foi possível baixar o arquivo.");
+  }
+}
+
+/* ---------- Análise: filtros, dashboard, evolução, concentração e proventos (Etapa 2) ---------- */
+function analysisQuery() {
+  const v = id => document.getElementById(id)?.value || "ALL";
+  return new URLSearchParams({
+    period: v("an-period"), country: v("an-country"), currency: v("an-currency"), asset_class: v("an-class"),
+  }).toString();
+}
+
+function resetAnalysisFilters() {
+  ["an-period", "an-country", "an-currency", "an-class"].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.value = "ALL";
+  });
+  loadAnalysis();
+}
+
+function exportAnalysisCsv() {
+  downloadAuthed(`/api/dashboard/export-csv?${analysisQuery()}`, "SIM_posicoes.csv");
+}
+
+async function loadAnalysis() {
+  const box = document.getElementById("analysis-content");
+  if (!box) return;
+  const sel = document.getElementById("an-class");
+  if (sel && sel.options.length <= 1) {
+    Object.entries(CLASS_NAMES).forEach(([k, v]) => sel.add(new Option(v, k)));
+  }
+  try {
+    const res = await fetch(`/api/dashboard?${analysisQuery()}`);
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    STATE.analysis = await res.json();
+    renderAnalysis(STATE.analysis);
+  } catch (e) {
+    console.error("Erro ao carregar análise:", e);
+    box.innerHTML = `<div class="card card-pad"><div class="empty-sm">Não foi possível carregar a análise. Os dados locais continuam disponíveis nas outras abas.</div></div>`;
+  }
+}
+
+function anBars(rows, colorFn) {
+  if (!rows || !rows.length) return `<div class="empty-sm">Sem dados para os filtros selecionados.</div>`;
+  return rows.map((r, i) => {
+    const color = colorFn ? colorFn(r, i) : ASSET_PALETTE[i % ASSET_PALETTE.length];
+    const native = r.current_native ? ` <span class="faint xs">(${fmtMoney(r.current_native, "USD")})</span>` : "";
+    return `
+      <div style="margin:9px 0">
+        <div class="row" style="justify-content:space-between;gap:10px">
+          <span class="small">${esc(r.label)} <span class="faint xs">· ${r.count}</span></span>
+          <span class="small strong">${fmtMoney(r.current_brl)}${native} <span class="muted">${Number(r.weight_pct).toFixed(1)}%</span></span>
+        </div>
+        <div style="height:7px;background:var(--surface-3);border-radius:99px;overflow:hidden;margin-top:4px">
+          <div style="width:${Math.min(100, Math.max(0.5, r.weight_pct))}%;height:100%;background:${color};border-radius:99px"></div>
+        </div>
+        <div class="xs ${r.profit_brl >= 0 ? "pos" : "neg"}">${fmtMoney(r.profit_brl)} (${fmtPct(r.profit_pct)})</div>
+      </div>`;
+  }).join("");
+}
+
+function anEvolutionSvg(ev) {
+  const snaps = ev.snapshots || [];
+  const contrib = ev.contributions || [];
+  const pts = [];
+  snaps.forEach(s => pts.push({ t: new Date(s.date + "T00:00:00").getTime(), v: s.total_current_brl, k: "val" }));
+  contrib.forEach(c => pts.push({ t: new Date(c.month + "-01T00:00:00").getTime(), v: c.cumulative_contribution_brl, k: "ctr" }));
+  if (!pts.length) return `<div class="empty-sm">Sem movimentos nem histórico registrados no período.</div>`;
+  const W = 680, H = 190, P = 8;
+  const tmin = Math.min(...pts.map(p => p.t)), tmax = Math.max(...pts.map(p => p.t));
+  const vmin = Math.min(0, ...pts.map(p => p.v)), vmax = Math.max(...pts.map(p => p.v)) || 1;
+  const x = t => P + (tmax === tmin ? (W - 2 * P) / 2 : (t - tmin) / (tmax - tmin) * (W - 2 * P));
+  const y = v => H - P - (v - vmin) / ((vmax - vmin) || 1) * (H - 2 * P);
+  const line = (arr, color, dash) => {
+    if (!arr.length) return "";
+    if (arr.length === 1) return `<circle cx="${x(arr[0].t)}" cy="${y(arr[0].v)}" r="4" fill="${color}"/>`;
+    return `<polyline fill="none" stroke="${color}" stroke-width="2" ${dash ? 'stroke-dasharray="5 4"' : ""} points="${arr.map(p => `${x(p.t).toFixed(1)},${y(p.v).toFixed(1)}`).join(" ")}"/>`;
+  };
+  const val = pts.filter(p => p.k === "val").sort((a, b) => a.t - b.t);
+  const ctr = pts.filter(p => p.k === "ctr").sort((a, b) => a.t - b.t);
+  return `
+    <svg viewBox="0 0 ${W} ${H}" style="width:100%;height:auto;max-height:220px" role="img" aria-label="Evolução do patrimônio e dos aportes acumulados">
+      <line x1="${P}" y1="${y(0)}" x2="${W - P}" y2="${y(0)}" stroke="var(--border-strong)" stroke-width="1"/>
+      ${line(ctr, "#e8b04b", true)}${line(val, "#3ecf8e", false)}
+    </svg>
+    <div class="row xs muted" style="gap:16px;margin-top:6px;flex-wrap:wrap">
+      <span><i style="display:inline-block;width:14px;height:3px;background:#3ecf8e;vertical-align:middle"></i> Patrimônio registrado pelo SIM</span>
+      <span><i style="display:inline-block;width:14px;height:3px;background:#e8b04b;vertical-align:middle"></i> Aportes líquidos acumulados</span>
+    </div>`;
+}
+
+function renderAnalysis(d) {
+  const box = document.getElementById("analysis-content");
+  if (!box) return;
+  const k = d.kpis, fx = d.fx, q = d.data_quality, ev = d.evolution, c = d.concentration, dv = d.dividends;
+  const pos = k.profit_brl >= 0;
+  const rec = d.reconciliation || {};
+  const recBadge = !rec.checked
+    ? `<span class="badge badge-outline" title="A conferência de totais só é feita sem filtros">Conferência: com filtros</span>`
+    : rec.ok
+      ? `<span class="badge badge-pos" title="Soma das posições = total da carteira (tolerância R$ ${rec.tolerance_brl})">Totais conferidos</span>`
+      : `<span class="badge badge-neg" title="Diferença atual R$ ${rec.diff_current_brl} / investido R$ ${rec.diff_invested_brl}">Totais divergentes</span>`;
+
+  const fxLine = fx.is_live
+    ? `USD/BRL <b>${Number(fx.usd_brl).toFixed(4).replace(".", ",")}</b> · ${esc(fx.source)} · atualizado em ${esc(fx.updated_at)}`
+    : `USD/BRL <b>${Number(fx.usd_brl).toFixed(4).replace(".", ",")}</b> · <span class="neg">${esc(fx.source)}</span>`;
+  const staleLine = q.positions_with_stale_quote > 0
+    ? `<div class="small neg" style="margin-top:6px">⚠ ${q.positions_with_stale_quote} de ${q.positions_total} posições com cotação antiga ou sem atualização (${esc(q.stale_codes.join(", "))}). Cotação mais antiga: ${esc(q.oldest_quote_at || "—")}.</div>`
+    : `<div class="small muted" style="margin-top:6px">Cotações atualizadas nas últimas 24h${q.oldest_quote_at ? " (mais antiga: " + esc(q.oldest_quote_at) + ")" : ""}.</div>`;
+
+  const pr = ev.period_return || {};
+  const prHtml = pr.available
+    ? `<div class="small" style="margin-top:10px">Rentabilidade no período (${esc(pr.from)} → ${esc(pr.to)}): <b class="${pr.gain_brl >= 0 ? "pos" : "neg"}">${fmtMoney(pr.gain_brl)}${pr.return_pct !== null ? " (" + fmtPct(pr.return_pct) + ")" : ""}</b>
+        <div class="xs faint">${esc(pr.method)} · aportes líquidos no período: ${fmtMoney(pr.net_contributions_brl)}</div></div>`
+    : `<div class="small muted" style="margin-top:10px">${esc(pr.reason || "")}</div>`;
+
+  const topRows = c.top.length
+    ? c.top.map(t => `<tr><td class="strong">${esc(t.code)}</td><td class="muted">${esc(CLASS_NAMES[t.asset_class] || t.asset_class)}</td><td class="r">${fmtMoney(t.current_brl)}</td><td class="r strong">${Number(t.weight_pct).toFixed(1)}%</td></tr>`).join("")
+    : `<tr><td colspan="4" class="empty-sm">Sem posições.</td></tr>`;
+
+  const months = dv.by_month.slice(-12);
+  const maxM = Math.max(1, ...months.map(m => m.total_brl));
+  const monthBars = months.length
+    ? months.map(m => `<div style="flex:1;min-width:26px;text-align:center">
+          <div style="height:90px;display:flex;align-items:flex-end;justify-content:center"><div title="${esc(m.month)}: ${fmtMoney(m.total_brl)}" style="width:70%;height:${Math.max(3, m.total_brl / maxM * 100)}%;background:var(--accent);border-radius:4px 4px 0 0"></div></div>
+          <div class="xs faint">${esc(m.month.slice(5))}/${esc(m.month.slice(2, 4))}</div></div>`).join("")
+    : `<div class="empty-sm" style="width:100%">Nenhum provento no período/filtros.</div>`;
+  const curOrig = Object.entries(dv.by_currency_original || {}).map(([cur, v]) => fmtMoney(v, cur)).join(" + ");
+
+  box.innerHTML = `
+    <div class="card card-pad">
+      <div class="grid" style="grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:18px">
+        <div><div class="stat-label">Patrimônio (filtro atual)</div><div class="stat-value">${fmtMoney(k.total_current_brl)}</div></div>
+        <div><div class="stat-label">Valor investido</div><div class="stat-value">${fmtMoney(k.total_invested_brl)}</div></div>
+        <div><div class="stat-label">Resultado não realizado</div><div class="stat-value ${pos ? "pos" : "neg"}">${fmtMoney(k.profit_brl)}</div><div class="stat-foot ${pos ? "pos" : "neg"}">${fmtPct(k.profit_pct)} sobre custo</div></div>
+        <div><div class="stat-label">Resultado realizado</div><div class="stat-value">${k.realized_profit_brl === null ? "—" : fmtMoney(k.realized_profit_brl)}</div><div class="stat-foot">${esc(k.realized_note || "Vendas já concluídas")}</div></div>
+        <div><div class="stat-label">Posições</div><div class="stat-value">${k.holdings_count}</div></div>
+      </div>
+      <div class="row" style="gap:10px;margin-top:14px;flex-wrap:wrap">${recBadge}</div>
+      <div class="small muted" style="margin-top:8px">${fxLine}</div>
+      <div class="xs faint">${esc(fx.note)}</div>
+      ${staleLine}
+    </div>
+
+    <div class="card card-pad">
+      <div class="card-head"><div><div class="card-title">Evolução patrimonial e rentabilidade</div>
+        <div class="card-sub">${esc(ev.snapshots_note)}${ev.snapshots_since ? " Primeiro registro: " + esc(ev.snapshots_since) + "." : ""}</div></div></div>
+      ${anEvolutionSvg(ev)}
+      <div class="xs faint" style="margin-top:6px">${esc(ev.contributions_note)}</div>
+      ${prHtml}
+      <div class="xs faint" style="margin-top:6px">${esc(d.benchmark.reason)}</div>
+    </div>
+
+    <div class="grid grid-2" style="gap:20px">
+      <div class="card card-pad"><div class="card-title">Por classe</div>${anBars(d.distribution.by_class, r => CLASS_COLORS[r.key])}</div>
+      <div class="card card-pad"><div class="card-title">Por país</div>${anBars(d.distribution.by_country)}</div>
+      <div class="card card-pad"><div class="card-title">Por moeda</div>${anBars(d.distribution.by_currency)}</div>
+      <div class="card card-pad"><div class="card-title">Por setor</div>${anBars(d.distribution.by_sector)}</div>
+    </div>
+
+    <div class="card card-pad">
+      <div class="card-head"><div><div class="card-title">Concentração</div>
+        <div class="card-sub">Maior posição ${Number(c.top1_pct).toFixed(1)}% · 5 maiores ${Number(c.top5_pct).toFixed(1)}% · 10 maiores ${Number(c.top10_pct).toFixed(1)}% · HHI ${c.hhi} (≈ ${c.effective_positions} posições equivalentes)</div></div></div>
+      <div class="table-wrap"><table class="table"><thead><tr><th>Ativo</th><th>Classe</th><th class="r">Valor</th><th class="r">Peso</th></tr></thead><tbody>${topRows}</tbody></table></div>
+    </div>
+
+    <div class="card card-pad">
+      <div class="card-head"><div><div class="card-title">Proventos</div>
+        <div class="card-sub">Total no período: ${fmtMoney(dv.total_brl)} (${dv.count} pagamentos)${curOrig ? " · moedas originais: " + curOrig : ""}${dv.has_estimated_fx ? " · inclui conversão por câmbio atual (estimado)" : ""}</div></div></div>
+      <div class="row" style="align-items:flex-end;gap:4px;margin:10px 0">${monthBars}</div>
+      <div class="grid grid-2" style="gap:20px">
+        <div><div class="stat-label">Por ano</div>${dv.by_year.length ? dv.by_year.map(y => `<div class="row small" style="justify-content:space-between;margin:4px 0"><span>${esc(y.year)}</span><b>${fmtMoney(y.total_brl)}</b></div>`).join("") : '<div class="xs faint">—</div>'}</div>
+        <div><div class="stat-label">Por ativo (período)</div>${dv.by_ticker.length ? dv.by_ticker.slice(0, 8).map(t => `<div class="row small" style="justify-content:space-between;margin:4px 0"><span>${esc(t.ticker)}</span><b>${fmtMoney(t.total_brl)}</b></div>`).join("") : '<div class="xs faint">—</div>'}</div>
+      </div>
+    </div>`;
+  hydrateIcons(box);
 }
 
 function setDonutMode(mode) {

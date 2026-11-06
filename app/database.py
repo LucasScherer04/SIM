@@ -67,6 +67,27 @@ def migrate_fx_columns(conn=None):
         conn.close()
 
 
+def migrate_snapshots_table(conn=None):
+    """Cria a tabela de histórico diário de patrimônio (um registro por usuário e dia)."""
+    own_conn = conn is None
+    if own_conn:
+        conn = get_conn()
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS portfolio_snapshots (
+            user_id INTEGER NOT NULL,
+            snap_date TEXT NOT NULL,
+            total_current_brl REAL NOT NULL,
+            total_invested_brl REAL NOT NULL,
+            usd_brl REAL DEFAULT 0,
+            created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+            PRIMARY KEY (user_id, snap_date)
+        )
+    """)
+    conn.commit()
+    if own_conn:
+        conn.close()
+
+
 def migrate_to_multiuser(conn=None):
     """
     Garante o suporte a múltiplos usuários e dados isolados por conta no SQLite.
@@ -401,6 +422,7 @@ def init_db():
     conn.commit()
     migrate_fixed_income_columns(conn)
     migrate_fx_columns(conn)
+    migrate_snapshots_table(conn)
     migrate_to_multiuser(conn)
 
     # Seed default allocation targets

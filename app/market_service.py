@@ -64,6 +64,8 @@ def fetch_macro_indicators(force=False):
             if "USDBRL" in data:
                 MACRO_CACHE["usd_brl"] = round(float(data["USDBRL"]["bid"]), 4)
                 MACRO_CACHE["usd_change"] = round(float(data["USDBRL"].get("pctChange", 0.0)), 2)
+                # Data/hora da última atualização real do câmbio (usada para transparência no dashboard)
+                MACRO_CACHE["usd_brl_updated_at"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             if "EURBRL" in data:
                 MACRO_CACHE["eur_brl"] = round(float(data["EURBRL"]["bid"]), 4)
                 MACRO_CACHE["eur_change"] = round(float(data["EURBRL"].get("pctChange", 0.0)), 2)

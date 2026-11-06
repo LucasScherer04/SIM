@@ -157,6 +157,9 @@
             <button class="seg-btn" id="subtab-CATEGORIES" onclick="switchPortfolioSubTab('CATEGORIES')">
               <span data-icon="list"></span>Posições <span class="seg-count" id="portfolio-count-badge">0</span>
             </button>
+            <button class="seg-btn" id="subtab-ANALYSIS" onclick="switchPortfolioSubTab('ANALYSIS')">
+              <span data-icon="gauge"></span>Análise
+            </button>
           </div>
           <div class="row gap-2">
             <button class="btn btn-sm btn-secondary" onclick="openB3SyncModal()" title="Sincronizar carteira via planilha Excel/CSV da B3">
@@ -227,6 +230,35 @@
             </div>
             <div id="quick-holdings-grid" class="hold-list"></div>
           </div>
+        </div>
+
+        <!-- SUB-VIEW: ANÁLISE (Etapa 2) -->
+        <div id="portfolio-subview-ANALYSIS" class="stack hidden" style="gap:20px">
+          <div class="card card-pad">
+            <div class="row gap-2 wrap" style="gap:12px;flex-wrap:wrap;align-items:flex-end">
+              <div class="field" style="min-width:130px"><label for="an-period">Período</label>
+                <select id="an-period" class="select" onchange="loadAnalysis()">
+                  <option value="ALL">Todo o histórico</option><option value="1M">Último mês</option>
+                  <option value="3M">3 meses</option><option value="6M">6 meses</option>
+                  <option value="12M">12 meses</option><option value="YTD">Ano atual</option>
+                </select></div>
+              <div class="field" style="min-width:130px"><label for="an-country">País</label>
+                <select id="an-country" class="select" onchange="loadAnalysis()">
+                  <option value="ALL">Todos</option><option value="BR">Brasil</option>
+                  <option value="US">Estados Unidos</option><option value="GLOBAL">Global (cripto)</option>
+                </select></div>
+              <div class="field" style="min-width:110px"><label for="an-currency">Moeda</label>
+                <select id="an-currency" class="select" onchange="loadAnalysis()">
+                  <option value="ALL">Todas</option><option value="BRL">BRL</option><option value="USD">USD</option>
+                </select></div>
+              <div class="field" style="min-width:170px"><label for="an-class">Classe</label>
+                <select id="an-class" class="select" onchange="loadAnalysis()"><option value="ALL">Todas</option></select></div>
+              <button class="btn btn-sm btn-secondary" onclick="resetAnalysisFilters()">Limpar filtros</button>
+              <button class="btn btn-sm btn-secondary" onclick="exportAnalysisCsv()" title="Exporta as posições com os filtros atuais">
+                <span data-icon="download" data-size="14"></span><span>Exportar CSV</span></button>
+            </div>
+          </div>
+          <div id="analysis-content"><div class="empty-sm">Carregando análise…</div></div>
         </div>
 
         <!-- SUB-VIEW: POSIÇÕES POR CATEGORIA -->
@@ -854,12 +886,12 @@
           </div>
         </div>
         <div class="row gap-2 wrap" style="flex-shrink:0;align-items:flex-start">
-          <a href="/api/b3/export-xlsx" download class="btn btn-sm btn-secondary" title="Exportar todos os ativos atuais da sua carteira SIM em formato Excel B3">
+          <button type="button" onclick="downloadAuthed('/api/b3/export-xlsx', 'Carteira_B3_SIM.xlsx')" class="btn btn-sm btn-secondary" title="Exportar todos os ativos atuais da sua carteira SIM em formato Excel B3">
             <span data-icon="download" data-size="13"></span><span>Exportar Carteira (.xlsx)</span>
-          </a>
-          <a href="/api/b3/template-xlsx" download class="btn btn-sm btn-ghost" title="Baixar uma planilha modelo pronta no formato da B3 com abas de Negociação e Posição">
+          </button>
+          <button type="button" onclick="downloadAuthed('/api/b3/template-xlsx', 'Modelo_B3_SIM.xlsx')" class="btn btn-sm btn-ghost" title="Baixar uma planilha modelo pronta no formato da B3 com abas de Negociação e Posição">
             <span data-icon="file-spreadsheet" data-size="13"></span><span>Baixar Modelo B3</span>
-          </a>
+          </button>
         </div>
       </div>
 

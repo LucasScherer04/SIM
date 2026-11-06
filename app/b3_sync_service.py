@@ -1687,7 +1687,7 @@ def export_portfolio_b3_xlsx(portfolio_summary: Dict[str, Any]) -> bytes:
                 p["quantity"],
                 p["avg_price"],
                 p["current_price"],
-                p["current_total_brl"],
+                p["current_brl"],
             ])
     _auto_fit_columns(ws_acoes)
 
@@ -1707,7 +1707,7 @@ def export_portfolio_b3_xlsx(portfolio_summary: Dict[str, Any]) -> bytes:
                 p["quantity"],
                 p["avg_price"],
                 p["current_price"],
-                p["current_total_brl"],
+                p["current_brl"],
             ])
     _auto_fit_columns(ws_fii)
 
