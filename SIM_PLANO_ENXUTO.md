@@ -347,13 +347,15 @@ ferramentas de desenvolvimento.
 
 ### Etapa 0 --- Diagnóstico
 
--   [ ] Inventário do repositório
--   [ ] Funcionalidades mapeadas
--   [ ] Banco e regras financeiras documentados
--   [ ] Integrações identificadas
--   [ ] Aplicação e testes iniciais executados
--   [ ] Backup/restauração verificados
--   [ ] `docs/diagnostico-sim.md` criado
+-   [x] Inventário do repositório
+-   [x] Funcionalidades mapeadas
+-   [x] Banco e regras financeiras documentados
+-   [x] Integrações identificadas
+-   [x] Aplicação e testes iniciais executados (47 testes passam; smoke test em cópia do banco; interface não inspecionada visualmente)
+-   [x] Backup/restauração verificados (06/11/2026, `backups/20261106_172411/`)
+-   [x] `docs/diagnostico-sim.md` criado
+
+_Etapa 0 concluída em 06/11/2026. Ver `docs/diagnostico-sim.md`. Alterações: criação do diagnóstico e de `backups/`; `.gitignore` passou a ignorar `backups/` e `*.db-wal/-shm`. Nenhum código de produção nem o banco foram alterados._
 
 ### Etapa 1 --- Carteira
 

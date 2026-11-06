@@ -10,3 +10,7 @@ env/
 *.log
 *.key
 .sim_secret.key
+
+backups/
+*.db-wal
+*.db-shm
