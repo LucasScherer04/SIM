@@ -158,15 +158,26 @@ def test_usd_venda_usa_cambio_da_venda_menos_custo_historico_em_brl(db):
     assert _pos(s, "AAPL")["quantity"] == 10
 
 
-def test_caracterizacao_usd_posicao_aberta_usa_cambio_atual_nos_dois_lados(db):
-    # CARACTERIZACAO: invested_brl = qtd * PM_usd * cambio ATUAL (e nao o custo historico em BRL).
-    # Logo o lucro em BRL de um ativo em USD ignora o efeito cambial desde a compra.
+def test_p2_usd_posicao_aberta_usa_custo_historico_em_brl(db):
+    # P2: custo em BRL = custo historico (12200 = 1000*5 + 1200*6); valor atual usa o cambio de hoje.
+    # O lucro em BRL inclui o efeito cambial; o lucro em USD e exibido a parte.
     _usd_setup()
     p = _pos(market_service.get_portfolio_summary(), "AAPL")
 
-    assert p["invested_brl"] == pytest.approx(20 * 110.0 * USD_BRL)  # 15400, nao 12200
-    assert p["current_brl"] == pytest.approx(20 * 130.0 * USD_BRL)
-    assert p["profit_brl"] == pytest.approx(20 * 20.0 * USD_BRL)
+    assert p["invested_brl"] == pytest.approx(12200.0)
+    assert p["current_brl"] == pytest.approx(20 * 130.0 * USD_BRL)  # 18200
+    assert p["profit_brl"] == pytest.approx(18200.0 - 12200.0)
+    assert p["invested_native"] == pytest.approx(2200.0)
+    assert p["current_native"] == pytest.approx(2600.0)
+    assert p["profit_native"] == pytest.approx(400.0)
+    assert p["fx_current"] == pytest.approx(USD_BRL)
+
+
+def test_p2_usd_apos_venda_parcial_custo_restante_e_proporcional(db):
+    _usd_setup()
+    _tx("2024-03-02", "AAPL", "STOCK_US", "SELL", 10, 130.0, currency="USD", fx=6.5)
+    p = _pos(market_service.get_portfolio_summary(), "AAPL")
+    assert p["invested_brl"] == pytest.approx(6100.0)  # metade de 12200
 
 
 def test_total_em_usd_usa_cambio_atual(db):
@@ -193,9 +204,8 @@ def test_proventos_somam_total_amount(db):
     assert len(s["dividends"]) == 2
 
 
-def test_caracterizacao_provento_em_usd_e_somado_sem_conversao(db):
-    # CARACTERIZACAO (problema comprovado): total_dividends_brl soma total_amount sem converter
-    # moeda; um provento de US$ 10 entra como R$ 10.
+def test_p4_provento_em_usd_e_convertido_pelo_cambio_atual(db):
+    # P4: sem cambio informado, converte pelo cambio atual (7.0) e marca como estimado.
     conn = database.get_conn()
     conn.execute(
         "INSERT INTO dividends_received (user_id, pay_date, ticker, amount_per_share, shares_qty, total_amount, currency) "
@@ -204,7 +214,46 @@ def test_caracterizacao_provento_em_usd_e_somado_sem_conversao(db):
     conn.commit()
     conn.close()
 
-    assert market_service.get_portfolio_summary()["kpis"]["total_dividends_brl"] == pytest.approx(10.0)
+    s = market_service.get_portfolio_summary()
+    d = s["dividends"][0]
+    assert s["kpis"]["total_dividends_brl"] == pytest.approx(70.0)
+    assert d["total_amount"] == 10.0 and d["currency"] == "USD"  # moeda original preservada
+    assert d["total_brl"] == pytest.approx(70.0)
+    assert d["fx_used"] == pytest.approx(USD_BRL) and d["fx_estimated"] is True
+
+
+def test_p4_provento_em_usd_com_cambio_informado(db):
+    conn = database.get_conn()
+    conn.execute(
+        "INSERT INTO dividends_received (user_id, pay_date, ticker, amount_per_share, shares_qty, total_amount, currency, fx_rate) "
+        "VALUES (1, '2024-05-10', 'AAPL', 1.0, 10, 10.0, 'USD', 5.5)"
+    )
+    conn.commit()
+    conn.close()
+
+    d = market_service.get_portfolio_summary()["dividends"][0]
+    assert d["total_brl"] == pytest.approx(55.0)
+    assert d["fx_used"] == pytest.approx(5.5) and d["fx_estimated"] is False
+
+
+def test_p4_provento_em_brl_nao_e_alterado(db):
+    conn = database.get_conn()
+    conn.execute(
+        "INSERT INTO dividends_received (user_id, pay_date, ticker, amount_per_share, shares_qty, total_amount) "
+        "VALUES (1, '2024-05-10', 'HGLG11', 1.0, 10, 10.0)"
+    )
+    conn.commit()
+    conn.close()
+    d = market_service.get_portfolio_summary()["dividends"][0]
+    assert d["total_brl"] == 10.0 and d["fx_used"] == 1.0 and d["fx_estimated"] is False
+
+
+def test_p5_resultado_realizado_arredondado_por_venda(db):
+    _catalog("X", "ACAO_BR", 10.0)
+    _tx("2024-01-02", "X", "ACAO_BR", "BUY", 3, 10.0)
+    for i in range(3):  # cada venda: (10.3333 - 10) * 1 -> 0.33 (arredondado a centavos)
+        _tx(f"2024-02-0{i + 1}", "X", "ACAO_BR", "SELL", 1, 10.3333)
+    assert market_service.get_portfolio_summary()["kpis"]["realized_profit_brl"] == pytest.approx(0.99)
 
 
 # ---------------------------------------------------------------- Renda fixa

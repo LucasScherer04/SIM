@@ -288,6 +288,9 @@ class TransactionCreate(BaseModel):
     unit_price: float
     fees: float = 0.0
     currency: str = "BRL"
+    # Câmbio BRL por unidade da moeda da operação (ex.: USD). Opcional: sem ele o câmbio
+    # de hoje é usado e a operação é marcada como "câmbio estimado".
+    fx_rate: Optional[float] = None
     broker: str = "XP Investimentos"
     notes: str = ""
 
@@ -323,6 +326,8 @@ class DividendCreate(BaseModel):
     amount_per_share: float
     shares_qty: float
     currency: str = "BRL"
+    # Câmbio BRL informado pelo usuário (opcional). Sem ele, a conversão usa o câmbio atual.
+    fx_rate: Optional[float] = None
 
 
 @app.get("/api/portfolio")
@@ -496,8 +501,44 @@ def api_lookup_ticker(ticker: str = Query(...), asset_class: str = Query("ACAO_B
 @app.post("/api/transactions")
 def api_add_transaction(payload: TransactionCreate, current_user: Dict[str, Any] = Depends(get_current_user)):
     ticker = payload.ticker.upper().strip().replace(".SA", "")
-    macro = fetch_macro_indicators()
-    fx = float(macro.get("usd_brl", 5.72)) if payload.currency.upper() == "USD" else 1.0
+    tx_type = payload.tx_type.upper().strip()
+    if payload.quantity <= 0 or payload.unit_price < 0 or payload.fees < 0:
+        raise HTTPException(status_code=400, detail="Quantidade deve ser positiva; preço e taxas não podem ser negativos.")
+    if payload.fx_rate is not None and payload.fx_rate <= 0:
+        raise HTTPException(status_code=400, detail="O câmbio informado deve ser maior que zero.")
+
+    # P1: não permitir venda acima da quantidade em custódia (na data da venda e no total).
+    if tx_type in ("SELL", "VENDA"):
+        conn = get_conn()
+        rows = conn.execute(
+            "SELECT tx_date, tx_type, quantity FROM transactions WHERE user_id = ? AND UPPER(ticker) = ?",
+            (current_user["id"], ticker),
+        ).fetchall()
+        conn.close()
+
+        def _signed(r):
+            q = float(r["quantity"])
+            return q if str(r["tx_type"]).upper().strip() in ("BUY", "COMPRA") else -q
+
+        held_at_date = sum(_signed(r) for r in rows if str(r["tx_date"]) <= payload.tx_date)
+        held_total = sum(_signed(r) for r in rows)
+        available = min(held_at_date, held_total)
+        if payload.quantity > available + 1e-8:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Venda de {payload.quantity:g} excede a quantidade em custódia de {ticker} "
+                       f"({max(available, 0.0):g}).",
+            )
+
+    # P3: câmbio informado pelo usuário tem prioridade; senão usa o câmbio de hoje e marca como estimado.
+    is_foreign = payload.currency.upper() == "USD"
+    if not is_foreign:
+        fx, fx_estimated = 1.0, 0
+    elif payload.fx_rate is not None:
+        fx, fx_estimated = float(payload.fx_rate), 0
+    else:
+        macro = fetch_macro_indicators()
+        fx, fx_estimated = float(macro.get("usd_brl", 5.72)), 1
 
     # Try live lookup first so new tickers get real market price & dividend data
     live_info = lookup_ticker_live(ticker, payload.asset_class.upper())
@@ -529,19 +570,20 @@ def api_add_transaction(payload: TransactionCreate, current_user: Dict[str, Any]
         ))
 
     cur.execute("""
-        INSERT INTO transactions (user_id, tx_date, ticker, asset_class, tx_type, quantity, unit_price, fees, currency, fx_rate, broker, notes)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        INSERT INTO transactions (user_id, tx_date, ticker, asset_class, tx_type, quantity, unit_price, fees, currency, fx_rate, fx_estimated, broker, notes)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     """, (
         current_user["id"],
         payload.tx_date,
         ticker,
         payload.asset_class.upper(),
-        payload.tx_type.upper(),
+        tx_type,
         payload.quantity,
         payload.unit_price,
         payload.fees,
         payload.currency.upper(),
         fx,
+        fx_estimated,
         payload.broker,
         payload.notes,
     ))
@@ -749,10 +791,12 @@ def api_delete_fixed_income(fi_id: int, current_user: Dict[str, Any] = Depends(g
 @app.post("/api/dividends")
 def api_add_dividend(payload: DividendCreate, current_user: Dict[str, Any] = Depends(get_current_user)):
     total = round(payload.amount_per_share * payload.shares_qty, 2)
+    if payload.fx_rate is not None and payload.fx_rate <= 0:
+        raise HTTPException(status_code=400, detail="O câmbio informado deve ser maior que zero.")
     conn = get_conn()
     conn.execute("""
-        INSERT INTO dividends_received (user_id, pay_date, ticker, div_type, amount_per_share, shares_qty, total_amount, currency)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        INSERT INTO dividends_received (user_id, pay_date, ticker, div_type, amount_per_share, shares_qty, total_amount, currency, fx_rate)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
     """, (
         current_user["id"],
         payload.pay_date,
@@ -762,6 +806,7 @@ def api_add_dividend(payload: DividendCreate, current_user: Dict[str, Any] = Dep
         payload.shares_qty,
         total,
         payload.currency.upper(),
+        float(payload.fx_rate) if payload.fx_rate else 0.0,
     ))
     conn.commit()
     conn.close()

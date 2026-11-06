@@ -3418,7 +3418,7 @@ function renderDividendsView(divs) {
     return;
   }
 
-  const total = divs.reduce((a, d) => a + Number(d.total_amount || 0), 0);
+  const total = divs.reduce((a, d) => a + Number(d.total_brl ?? d.total_amount ?? 0), 0);
   const estMonthly = STATE.portfolio ? STATE.portfolio.kpis.estimated_monthly_divs_brl : 0;
 
   if (sumEl) {
@@ -3449,7 +3449,7 @@ function renderDividendsView(divs) {
       <td><span class="badge badge-pos">${esc(d.div_type)}</span></td>
       <td class="r accent">${fmtMoney(d.amount_per_share, d.currency)}</td>
       <td class="r">${Number(d.shares_qty) || 0}</td>
-      <td class="r strong accent">${fmtMoney(d.total_amount, d.currency)}</td>
+      <td class="r strong accent">${fmtMoney(d.total_amount, d.currency)}${d.currency && d.currency !== "BRL" ? `<div class="xs faint">≈ ${fmtMoney(d.total_brl)} @ ${Number(d.fx_used).toFixed(4)}${d.fx_estimated ? " (câmbio atual, estimado)" : ""}</div>` : ""}</td>
       <td class="r">
         <button onclick="deleteDividend(${d.id})" class="btn-icon sm danger" title="Excluir">${ic("trash", 14)}</button>
       </td>
@@ -4077,7 +4077,7 @@ function renderB3Preview(preview) {
         <td class="r mono">${Number(d.shares_qty) || 0}</td>
         <td class="r mono">${fmtMoney(d.amount_per_share)}</td>
         <td class="r mono">—</td>
-        <td class="r strong pos mono">+${fmtMoney(d.total_amount)}</td>
+        <td class="r strong pos mono">+${fmtMoney(d.total_brl ?? d.total_amount)}</td>
       </tr>
     `);
   });

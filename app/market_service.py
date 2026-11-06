@@ -982,7 +982,8 @@ def get_portfolio_summary(user_id: int = 1):
                 cost_sold_brl = (pos["avg_price"] * q) + f
                 pos["cost_basis_brl"] = max(0.0, pos.get("cost_basis_brl", 0.0) - cost_sold_brl)
 
-            realized_profit_brl += gain_brl
+            # P5: resultado realizado arredondado a centavos a cada venda (evita acúmulo de erro de ponto flutuante)
+            realized_profit_brl += round(gain_brl, 2)
             pos["quantity"] = max(0.0, pos["quantity"] - q)
             if pos["quantity"] <= 1e-8:
                 pos["quantity"] = 0.0
@@ -1031,9 +1032,16 @@ def get_portfolio_summary(user_id: int = 1):
         current_native = pos["quantity"] * cur_price
         profit_pct = ((cur_price - pos["avg_price"]) / pos["avg_price"] * 100.0) if pos["avg_price"] > 0 else 0.0
 
-        invested_brl = invested_native * mult
+        # P2: custo em BRL de ativos em USD = custo histórico (câmbio de cada compra); só o valor
+        # atual usa o câmbio de hoje. Assim o lucro em BRL inclui o efeito cambial.
+        basis_brl = pos.get("cost_basis_brl") or 0.0
+        if curr == "USD" and basis_brl > 0:
+            invested_brl = basis_brl
+        else:
+            invested_brl = invested_native * mult
         current_brl = current_native * mult
         profit_brl = current_brl - invested_brl
+        profit_native = current_native - invested_native
         day_var_brl = current_brl * (chg_pct / 100.0)
 
         total_invested_brl += invested_brl
@@ -1067,6 +1075,10 @@ def get_portfolio_summary(user_id: int = 1):
             "invested_brl": round(invested_brl, 2),
             "current_brl": round(current_brl, 2),
             "profit_brl": round(profit_brl, 2),
+            "invested_native": round(invested_native, 2),
+            "current_native": round(current_native, 2),
+            "profit_native": round(profit_native, 2),
+            "fx_current": round(usd_brl, 4) if curr == "USD" else 1.0,
             "profit_pct": round(profit_pct, 2),
         }
         positions.append(item_dict)
@@ -1167,8 +1179,24 @@ def get_portfolio_summary(user_id: int = 1):
     total_profit_pct = round((total_profit_brl / total_invested_brl * 100.0) if total_invested_brl > 0 else 0.0, 2)
     day_change_pct = round((day_change_brl / total_current_brl * 100.0) if total_current_brl > 0 else 0.0, 2)
 
-    dividends_list = [dict(d) for d in div_rows]
-    total_dividends_brl = round(sum(float(d["total_amount"]) for d in dividends_list), 2)
+    # P4: proventos em moeda estrangeira são convertidos para BRL (câmbio informado ou, na falta dele,
+    # o câmbio atual). Cada item mostra moeda original, câmbio usado e se foi estimado.
+    dividends_list = []
+    for d in div_rows:
+        item = dict(d)
+        currency = (item.get("currency") or "BRL").upper()
+        original = float(item["total_amount"])
+        if currency == "BRL":
+            fx_used, fx_estimated = 1.0, False
+        else:
+            informed = float(item.get("fx_rate") or 0.0)
+            fx_used = informed if informed > 0 else usd_brl
+            fx_estimated = informed <= 0
+        item["total_brl"] = round(original * fx_used, 2)
+        item["fx_used"] = round(fx_used, 4)
+        item["fx_estimated"] = fx_estimated
+        dividends_list.append(item)
+    total_dividends_brl = round(sum(d["total_brl"] for d in dividends_list), 2)
     estimated_monthly_divs_brl = round(sum(p["monthly_passive_income_brl"] for p in positions if p["asset_class"] in ("FII", "ACAO_BR")), 2)
 
     return {

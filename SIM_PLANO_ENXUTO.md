@@ -359,16 +359,21 @@ _Etapa 0 concluída em 06/11/2026. Ver `docs/diagnostico-sim.md`. Alterações: 
 
 ### Etapa 1 --- Carteira
 
--   [ ] Cadastro e operações validados (compra/venda cobertas por testes; falta validar oversell e câmbio da data da operação — ver propostas)
--   [ ] Proventos validados (soma coberta por testes; USD sem conversão — proposta pendente)
+-   [x] Cadastro e operações validados (P1: venda acima da custódia rejeitada; P3: câmbio informado/estimado)
+-   [x] Proventos validados (P4: conversão para BRL com moeda original, câmbio e marca de estimado)
 -   [x] Posição e preço médio validados (`tests/test_portfolio_calc.py`)
 -   [x] Resultados realizados/não realizados validados (comportamento atual fixado em testes)
--   [ ] BRL e USD tratados corretamente (aguardando aprovação das propostas P2 e P3)
--   [x] Testes de regressão passando (25 novos + 47 existentes)
+-   [x] BRL e USD tratados corretamente (P2: custo histórico em BRL; lucro em USD exibido à parte)
+-   [x] Testes de regressão passando (ver contagem no registro da Etapa 1 abaixo)
 
-**Etapa 1 — andamento (06/11/2026).** Feito: criado `tests/test_portfolio_calc.py` (25 testes, banco temporário, rede mockada) que fixa as regras atuais de PM, venda parcial/total, resultado realizado BRL/USD, proventos e renda fixa (IR regressivo, indexadores, âncora de mercado). Testes marcados "CARACTERIZACAO" descrevem comportamento questionável sem endossá-lo. Nenhuma regra de cálculo foi alterada.
+**Etapa 1 — andamento (06/11/2026).** Feito: criado `tests/test_portfolio_calc.py` (25 testes, banco temporário, rede mockada) que fixa as regras atuais de PM, venda parcial/total, resultado realizado BRL/USD, proventos e renda fixa (IR regressivo, indexadores, âncora de mercado). Testes marcados "CARACTERIZACAO" descrevem comportamento questionável sem endossá-lo. Nenhuma regra de cálculo foi alterada nessa primeira fase.
 
-**Propostas pendentes de aprovação (regra atual → problema → regra proposta):**
+**Etapa 1 — implementação das propostas P1–P5 (aprovadas em 06/11/2026).**
+Arquivos alterados: `app/database.py` (migração aditiva `fx_estimated` em `transactions` e `fx_rate` em `dividends_received`), `app/main.py` (validação de venda, `fx_rate` opcional em operações e proventos, validações básicas de quantidade/preço/taxa/câmbio), `app/market_service.py` (custo histórico em BRL para USD, campos `*_native`/`fx_current`, proventos convertidos, realizado arredondado por venda), `static/app.js` (proventos exibem total convertido e câmbio), `tests/test_portfolio_calc.py` (atualizado), `tests/test_portfolio_api.py` (novo).
+Decisões: P5 por arredondamento a centavos a cada venda (sem migrar para `Decimal`); a UI de cadastro **ainda não** tem campo para informar o câmbio — a API aceita `fx_rate`, e sem ele a operação fica marcada como estimada.
+Limitações/pendências: (a) operações e proventos antigos ficam com `fx_estimated=0`/`fx_rate=0` (origem do câmbio desconhecida); (b) proventos antigos em USD passam a ser convertidos pelo câmbio **atual**, que varia a cada dia; (c) campo de câmbio nos formulários e indicação visual de "câmbio estimado" nas operações na interface; (d) taxas/impostos e eventos corporativos (desdobramentos, bonificações) seguem sem tratamento próprio — nenhum evento corporativo é modelado hoje; (e) a mudança de P2 altera os valores exibidos de lucro/investido de ativos em USD.
+
+**Propostas P1–P5 (regra atual → problema → regra proposta) — todas implementadas:**
 
 | # | Regra atual | Problema | Proposta |
 |---|---|---|---|

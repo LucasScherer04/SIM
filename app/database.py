@@ -42,6 +42,31 @@ def migrate_fixed_income_columns(conn=None):
         conn.close()
 
 
+# Colunas de câmbio (Etapa 1). Migração aditiva e idempotente; linhas antigas ficam com o default.
+FX_EXTRA_COLUMNS = {
+    # 1 quando o câmbio da operação foi estimado pelo sistema (câmbio de hoje) e não informado pelo usuário.
+    "transactions": {"fx_estimated": "INTEGER DEFAULT 0"},
+    # Câmbio BRL por unidade da moeda do provento informado pelo usuário; 0 = não informado.
+    "dividends_received": {"fx_rate": "REAL DEFAULT 0"},
+}
+
+
+def migrate_fx_columns(conn=None):
+    """Adiciona colunas de câmbio em transactions e dividends_received caso ainda não existam."""
+    own_conn = conn is None
+    if own_conn:
+        conn = get_conn()
+    for table, cols in FX_EXTRA_COLUMNS.items():
+        existing = {row[1] for row in conn.execute(f"PRAGMA table_info({table})").fetchall()}
+        if existing:
+            for col, ddl in cols.items():
+                if col not in existing:
+                    conn.execute(f"ALTER TABLE {table} ADD COLUMN {col} {ddl}")
+    conn.commit()
+    if own_conn:
+        conn.close()
+
+
 def migrate_to_multiuser(conn=None):
     """
     Garante o suporte a múltiplos usuários e dados isolados por conta no SQLite.
@@ -375,6 +400,7 @@ def init_db():
 
     conn.commit()
     migrate_fixed_income_columns(conn)
+    migrate_fx_columns(conn)
     migrate_to_multiuser(conn)
 
     # Seed default allocation targets
