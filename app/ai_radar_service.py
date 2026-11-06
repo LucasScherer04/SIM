@@ -5,14 +5,28 @@ from datetime import datetime
 from typing import Dict, List, Any, Optional
 import requests
 
-from .database import get_conn
+from .database import get_conn, migrate_ai_stage4_tables
 from .crypto_service import encrypt_secret, decrypt_secret
-from .market_service import get_portfolio_summary, get_asset_specialized_profile
+from .market_service import (
+    get_portfolio_summary,
+    get_asset_specialized_profile,
+    get_asset_chart_and_dividends,
+    fetch_macro_indicators,
+    is_quote_stale,
+)
+from .dashboard_service import get_dashboard
 from .intelligence_service import (
     fetch_asset_news,
     fetch_official_reports,
     _build_valuation_and_viability_models,
 )
+
+PROMPT_VERSION = "etapa4-v1.0"
+STANDARD_LIMITATIONS = [
+    "As análises têm finalidade estritamente informativa e de organização pessoal; não constituem recomendação regulada nem executam ordens de compra ou venda.",
+    "Nenhuma hipótese do radar ou interpretação da IA garante rentabilidade futura ou valorização.",
+    "Comparações com médias históricas não determinam sozinhas se um ativo está barato ou caro; avalie sempre fundamentos, proventos, eventos corporativos, juros, inflação e câmbio.",
+]
 
 DEFAULT_SETTINGS = {
     "ai_provider": "GEMINI",  # 'GEMINI' | 'OPENAI' | 'GROQ'
@@ -73,7 +87,17 @@ def ensure_settings_tables():
             conn.execute("UPDATE app_settings SET value = ? WHERE user_id = ? AND key = ?", (enc, r["user_id"], r["key"]))
 
     conn.commit()
+    migrate_ai_stage4_tables(conn)
     conn.close()
+
+
+def _sanitize_error_message(msg: str, api_key: str = "") -> str:
+    """Remove qualquer ocorrência acidental de chaves de API de mensagens de erro ou logs."""
+    s = str(msg or "")
+    if api_key and len(api_key.strip()) >= 6:
+        s = s.replace(api_key.strip(), "[CHAVE_OCULTADA]")
+    s = re.sub(r"(sk-[A-Za-z0-9_\-]{10,}|AIza[A-Za-z0-9_\-]{10,}|gsk_[A-Za-z0-9_\-]{10,})", "[CHAVE_OCULTADA]", s)
+    return s
 
 
 def get_raw_settings(user_id: int = 1) -> Dict[str, str]:
@@ -90,9 +114,17 @@ def get_raw_settings(user_id: int = 1) -> Dict[str, str]:
         if data.get(sec_key):
             data[sec_key] = decrypt_secret(data[sec_key])
 
-    # Fallback to environment variable if ai_api_key not set in DB
-    if not data.get("ai_api_key") and os.environ.get("GEMINI_API_KEY"):
-        data["ai_api_key"] = os.environ.get("GEMINI_API_KEY", "").strip()
+    # Fallback para variáveis de ambiente caso ai_api_key não esteja salva no banco
+    if not data.get("ai_api_key"):
+        prov = (data.get("ai_provider") or "GEMINI").upper().strip()
+        env_map = {
+            "GEMINI": "GEMINI_API_KEY",
+            "OPENAI": "OPENAI_API_KEY",
+            "GROQ": "GROQ_API_KEY",
+        }
+        env_val = os.environ.get(env_map.get(prov, "GEMINI_API_KEY")) or os.environ.get("GEMINI_API_KEY")
+        if env_val:
+            data["ai_api_key"] = env_val.strip()
     return data
 
 
@@ -230,7 +262,7 @@ def call_configured_llm(
         elif r.status_code == 429:
             raise ValueError("Limite de cota do Google Gemini excedido (Erro 429: Resource Exhausted / Rate limit).")
         elif r.status_code != 200:
-            raise ValueError(f"Erro Gemini ({r.status_code}): {r.text[:220]}")
+            raise ValueError(_sanitize_error_message(f"Erro Gemini ({r.status_code}): {r.text[:220]}", api_key))
         data = r.json()
         try:
             return data["candidates"][0]["content"]["parts"][0]["text"]
@@ -268,7 +300,7 @@ def call_configured_llm(
         elif r.status_code == 429:
             raise ValueError(f"Limite de cota ou taxa do {provider} excedido (Erro 429: Quota / Rate limit).")
         elif r.status_code != 200:
-            raise ValueError(f"Erro {provider} ({r.status_code}): {r.text[:220]}")
+            raise ValueError(_sanitize_error_message(f"Erro {provider} ({r.status_code}): {r.text[:220]}", api_key))
         data = r.json()
         try:
             return data["choices"][0]["message"]["content"]
@@ -476,7 +508,7 @@ def generate_portfolio_and_market_radar(force_refresh: bool = False, user_id: in
                     cached_data = json.loads(cached["radar_json"])
                     if not cached_data.get("ai_error"):
                         conn.close()
-                        return cached_data
+                        return _apply_live_item_states_to_radar(cached_data, user_id=user_id)
             except Exception:
                 pass
 
@@ -571,9 +603,14 @@ def generate_portfolio_and_market_radar(force_refresh: bool = False, user_id: in
                 ),
             })
 
-    # 2. Scan all catalog assets for Top Market Opportunities
+    # 2. Scan all catalog assets for Top Market Opportunities and Watchlist Signals
+    fav_rows = conn.execute("SELECT ticker FROM favorites WHERE user_id = ? ORDER BY ticker ASC", (user_id,)).fetchall()
     all_rows = conn.execute("SELECT * FROM assets_catalog").fetchall()
     conn.close()
+
+    fav_tickers = {r["ticker"].upper() for r in fav_rows}
+    catalog_by_ticker = {r["ticker"].upper(): dict(r) for r in all_rows}
+    item_states_map = get_radar_item_states(user_id=user_id)
 
     scored_candidates: List[Dict[str, Any]] = []
     for r in all_rows:
@@ -592,6 +629,8 @@ def generate_portfolio_and_market_radar(force_refresh: bool = False, user_id: in
             items = n_data if isinstance(n_data, list) else n_data.get("items", [])
             if items:
                 opp["latest_news"] = items[0].get("title", "")
+                opp["latest_news_link"] = items[0].get("link", "")
+                opp["latest_news_date"] = items[0].get("published", "")
                 opp["news_sentiment"] = items[0].get("sentiment", "NEUTRO")
         except Exception:
             opp["latest_news"] = ""
@@ -601,8 +640,67 @@ def generate_portfolio_and_market_radar(force_refresh: bool = False, user_id: in
             reps = r_data.get("reports", []) if isinstance(r_data, dict) else []
             if reps:
                 opp["latest_report"] = f"{reps[0].get('title', 'Relatório Oficial')} ({reps[0].get('date', '')})"
+                opp["latest_report_url"] = reps[0].get("url", "")
         except Exception:
             opp["latest_report"] = ""
+
+    # Attach item_key, user_status and counter-arguments/risks to opportunities and alerts
+    for a in portfolio_alerts:
+        ikey = f"ALERT:{a['ticker']}"
+        a["item_key"] = ikey
+        a["user_status"] = item_states_map.get(ikey, {}).get("status", "NOVO")
+        a["user_notes"] = item_states_map.get(ikey, {}).get("notes", "")
+
+    for opp in top_opportunities:
+        ikey = f"OPP:{opp['ticker']}"
+        opp["item_key"] = ikey
+        opp["in_watchlist"] = opp["ticker"].upper() in fav_tickers
+        opp["user_status"] = item_states_map.get(ikey, {}).get("status", "NOVO")
+        opp["user_notes"] = item_states_map.get(ikey, {}).get("notes", "")
+        opp["disclaimer"] = "Hipótese para investigação analítica, não constitui recomendação nem garantia de retorno."
+
+    # Build Watchlist Signals (ativos em acompanhamento nos favoritos)
+    watchlist_signals: List[Dict[str, Any]] = []
+    for ft in sorted(fav_tickers):
+        cat = catalog_by_ticker.get(ft)
+        if not cat:
+            continue
+        price = float(cat.get("last_price") or 0.0)
+        chg = float(cat.get("change_pct") or 0.0)
+        dy = float(cat.get("dy_12m") or 0.0)
+        pvp = float(cat.get("pvp") or 1.0)
+        pl = float(cat.get("pl") or 0.0)
+        signals = []
+        if abs(chg) >= 1.5:
+            signals.append(f"Variação incomum no dia ({chg:+.2f}%)")
+        if cat.get("asset_class") == "FII" and 0 < pvp <= 0.95:
+            signals.append(f"Desconto patrimonial relevante (P/VP {pvp:.2f}x)")
+        elif cat.get("asset_class") == "ACAO_BR" and 0 < pl <= 8.5:
+            signals.append(f"Múltiplo P/L baixo ({pl:.1f}x)")
+        if dy >= min_dy_target:
+            signals.append(f"DY 12m ({dy:.1f}%) atinge ou supera sua meta ({min_dy_target:.1f}%)")
+        if not signals:
+            signals.append("Ativo em acompanhamento na sua lista de observação")
+        ikey = f"WATCH:{ft}"
+        watchlist_signals.append({
+            "item_key": ikey,
+            "ticker": ft,
+            "name": cat.get("name", ft),
+            "asset_class": cat.get("asset_class", "ACAO_BR"),
+            "currency": cat.get("currency", "BRL"),
+            "last_price": price,
+            "change_pct": chg,
+            "dy_12m": dy,
+            "pvp": pvp,
+            "pl": pl,
+            "in_portfolio": ft in held_tickers,
+            "signals": signals,
+            "quote_source": cat.get("quote_source") or "Catálogo local",
+            "updated_at": cat.get("updated_at") or "",
+            "is_stale": is_quote_stale(cat.get("updated_at")),
+            "user_status": item_states_map.get(ikey, {}).get("status", "ACOMPANHANDO"),
+            "user_notes": item_states_map.get(ikey, {}).get("notes", ""),
+        })
 
     # 3. Generate Executive AI Analyst Briefing (via LLM if API key is configured, or Quantitative CNPI Engine)
     ai_generated = False
@@ -711,8 +809,74 @@ def generate_portfolio_and_market_radar(force_refresh: bool = False, user_id: in
                 "Sincronize sua planilha da B3 (.xlsx) mensalmente para manter o cálculo de rebalanceamento e proventos exato."
             )
 
+    radar_warnings: List[str] = []
+    stale_held = [p["ticker"] for p in positions if is_quote_stale(p.get("updated_at"))]
+    if stale_held:
+        radar_warnings.append(
+            f"{len(stale_held)} ativo(s) da carteira possuem cotação sem atualização nas últimas 24h ({', '.join(stale_held[:5])})."
+        )
+    if not settings.get("ai_api_key"):
+        radar_warnings.append(
+            "Chave de API de IA não configurada: o parecer executivo foi gerado pelo Motor Analítico Quantitativo do SIM."
+        )
+    elif ai_error:
+        radar_warnings.append(
+            f"API de IA indisponível ({ai_error}); exibindo análise quantitativa de contingência do SIM."
+        )
+
+    radar_sources: List[Dict[str, str]] = [
+        {
+            "name": "Carteira Local SQLite + Cotações de Mercado",
+            "kind": "FATO_OBSERVADO",
+            "updated_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            "url": "",
+            "ticker": "CARTEIRA",
+        },
+        {
+            "name": "Modelos Quantitativos SIM (Bazin, Graham, Score e Alocação)",
+            "kind": "CALCULO_SIM",
+            "updated_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            "url": "",
+            "ticker": "MERCADO",
+        },
+    ]
+    for opp in top_opportunities[:4]:
+        if opp.get("latest_report_url"):
+            radar_sources.append({
+                "name": opp.get("latest_report") or f"Relatório Oficial ({opp['ticker']})",
+                "kind": "FATO_OBSERVADO",
+                "updated_at": "",
+                "url": opp["latest_report_url"],
+                "ticker": opp["ticker"],
+            })
+        if opp.get("latest_news_link"):
+            radar_sources.append({
+                "name": f"Notícia ({opp['ticker']}): {opp.get('latest_news', '')[:70]}",
+                "kind": "FATO_OBSERVADO",
+                "updated_at": opp.get("latest_news_date", ""),
+                "url": opp["latest_news_link"],
+                "ticker": opp["ticker"],
+            })
+
+    radar_risks = [
+        "Descontos em P/VP ou P/L podem refletir deterioração operacional, vacância, alavancagem ou risco regulatório (armadilha de valor / value trap).",
+        "Dividend Yield passado de 12 meses não garante distribuição futura, especialmente em setores cíclicos (commodities) ou FIIs de papel indexados à inflação/CDI.",
+    ]
+
+    radar_facts = {
+        "total_patrimony_brl": round(total_patrimony, 2),
+        "positions_count": len(positions),
+        "top_opportunity_ticker": top_opportunities[0]["ticker"] if top_opportunities else "",
+        "top_opportunity_score": top_opportunities[0]["score"] if top_opportunities else 0,
+        "alerts_count": len(portfolio_alerts),
+        "watchlist_count": len(watchlist_signals),
+    }
+    prev_radar = _get_latest_saved_analysis(user_id=user_id, analysis_type="RADAR", target_key="RADAR_GERAL")
+    delta_since_last = _compute_facts_delta(prev_radar, radar_facts, {})
+
     result = {
         "generated_at": datetime.now().strftime("%d/%m/%Y %H:%M:%S"),
+        "prompt_version": PROMPT_VERSION,
         "ai_generated": ai_generated,
         "ai_provider_used": ai_provider_used,
         "investor_profile": investor_profile,
@@ -737,10 +901,36 @@ def generate_portfolio_and_market_radar(force_refresh: bool = False, user_id: in
         },
         "executive_briefing": executive_briefing,
         "action_recommendations": action_recommendations,
+        "risks_and_counterarguments": radar_risks,
+        "data_warnings": radar_warnings,
+        "sources": radar_sources,
+        "limitations": STANDARD_LIMITATIONS,
+        "delta_since_last": delta_since_last,
         "ai_error": ai_error,
         "portfolio_alerts": portfolio_alerts[:6],
         "opportunities": top_opportunities,
+        "watchlist_signals": watchlist_signals,
+        "item_states": item_states_map,
     }
+
+    analysis_id = save_analysis_record(
+        user_id=user_id,
+        analysis_type="RADAR",
+        target_key="RADAR_GERAL",
+        provider=settings.get("ai_provider", "SIM_QUANT") if ai_generated else "SIM_QUANT",
+        model=settings.get("ai_model", "sim-quant-v1") if ai_generated else "sim-quant-v1",
+        parameters={"investor_profile": investor_profile, "min_dy_target": min_dy_target},
+        facts=radar_facts,
+        sources=radar_sources,
+        warnings=radar_warnings,
+        result={
+            "executive_briefing": executive_briefing,
+            "action_recommendations": action_recommendations,
+            "risks_and_counterarguments": radar_risks,
+            "delta_since_last": delta_since_last,
+        },
+    )
+    result["analysis_id"] = analysis_id
 
     # Só grava no cache se a geração não tiver sofrido erro de IA, permitindo retry imediato após ajuste de chave
     if not ai_error:
@@ -756,3 +946,1142 @@ def generate_portfolio_and_market_radar(force_refresh: bool = False, user_id: in
             pass
 
     return result
+
+
+# ==============================================================================
+# ETAPA 4 — GESTÃO DE ITENS DO RADAR, HISTÓRICO E ANALISTA DE IA ESTRUTURADO
+# ==============================================================================
+
+VALID_RADAR_ITEM_STATUSES = {"NOVO", "RELEVANTE", "ACOMPANHANDO", "IGNORADO"}
+
+
+def get_radar_item_states(user_id: int = 1) -> Dict[str, Dict[str, Any]]:
+    """Retorna os estados marcados pelo usuário para itens do radar (oportunidades, alertas e watchlist)."""
+    migrate_ai_stage4_tables()
+    conn = get_conn()
+    rows = conn.execute(
+        "SELECT item_key, ticker, status, notes, updated_at FROM radar_item_states WHERE user_id = ?",
+        (user_id,),
+    ).fetchall()
+    conn.close()
+    return {
+        r["item_key"]: {
+            "item_key": r["item_key"],
+            "ticker": r["ticker"],
+            "status": r["status"],
+            "notes": r["notes"],
+            "updated_at": r["updated_at"],
+        }
+        for r in rows
+    }
+
+
+def set_radar_item_state(
+    item_key: str,
+    status: str,
+    ticker: str = "",
+    notes: str = "",
+    user_id: int = 1,
+) -> Dict[str, Any]:
+    """Marca um item do radar como RELEVANTE, ACOMPANHANDO, IGNORADO ou NOVO."""
+    migrate_ai_stage4_tables()
+    clean_key = (item_key or "").strip().upper()
+    if not clean_key:
+        raise ValueError("Identificador do item do radar (item_key) é obrigatório.")
+    clean_status = (status or "NOVO").strip().upper()
+    if clean_status not in VALID_RADAR_ITEM_STATUSES:
+        raise ValueError(f"Status inválido '{status}'. Valores aceitos: {', '.join(sorted(VALID_RADAR_ITEM_STATUSES))}.")
+    clean_ticker = (ticker or (clean_key.split(":", 1)[1] if ":" in clean_key else clean_key)).strip().upper()
+    now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+    conn = get_conn()
+    conn.execute(
+        """
+        INSERT INTO radar_item_states (user_id, item_key, ticker, status, notes, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?)
+        ON CONFLICT(user_id, item_key) DO UPDATE SET
+            ticker = excluded.ticker,
+            status = excluded.status,
+            notes = excluded.notes,
+            updated_at = excluded.updated_at
+        """,
+        (user_id, clean_key, clean_ticker, clean_status, (notes or "").strip(), now_str),
+    )
+    conn.commit()
+    conn.close()
+    return {
+        "item_key": clean_key,
+        "ticker": clean_ticker,
+        "status": clean_status,
+        "notes": (notes or "").strip(),
+        "updated_at": now_str,
+    }
+
+
+def _apply_live_item_states_to_radar(radar_data: Dict[str, Any], user_id: int = 1) -> Dict[str, Any]:
+    states = get_radar_item_states(user_id=user_id)
+    radar_data["item_states"] = states
+    for a in radar_data.get("portfolio_alerts", []):
+        ik = a.get("item_key") or f"ALERT:{a.get('ticker', '')}"
+        a["item_key"] = ik
+        a["user_status"] = states.get(ik, {}).get("status", a.get("user_status", "NOVO"))
+    for o in radar_data.get("opportunities", []):
+        ik = o.get("item_key") or f"OPP:{o.get('ticker', '')}"
+        o["item_key"] = ik
+        o["user_status"] = states.get(ik, {}).get("status", o.get("user_status", "NOVO"))
+    for w in radar_data.get("watchlist_signals", []):
+        ik = w.get("item_key") or f"WATCH:{w.get('ticker', '')}"
+        w["item_key"] = ik
+        w["user_status"] = states.get(ik, {}).get("status", w.get("user_status", "ACOMPANHANDO"))
+    return radar_data
+
+
+def save_analysis_record(
+    user_id: int,
+    analysis_type: str,
+    target_key: str,
+    provider: str,
+    model: str,
+    parameters: Dict[str, Any],
+    facts: Dict[str, Any],
+    sources: List[Dict[str, Any]],
+    warnings: List[str],
+    result: Dict[str, Any],
+    prompt_version: str = PROMPT_VERSION,
+) -> int:
+    """Salva uma análise rastreável no SQLite com data/hora, parâmetros, fontes, alertas e versão do modelo/prompt."""
+    migrate_ai_stage4_tables()
+    now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    conn = get_conn()
+    cur = conn.cursor()
+    cur.execute(
+        """
+        INSERT INTO ai_analysis_history (
+            user_id, analysis_type, target_key, provider, model, prompt_version,
+            parameters_json, facts_json, sources_json, warnings_json, result_json, created_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        (
+            user_id,
+            analysis_type.upper().strip(),
+            target_key.upper().strip(),
+            provider,
+            model,
+            prompt_version,
+            json.dumps(parameters or {}, ensure_ascii=False),
+            json.dumps(facts or {}, ensure_ascii=False),
+            json.dumps(sources or [], ensure_ascii=False),
+            json.dumps(warnings or [], ensure_ascii=False),
+            json.dumps(result or {}, ensure_ascii=False),
+            now_str,
+        ),
+    )
+    new_id = int(cur.lastrowid)
+    conn.commit()
+    conn.close()
+    return new_id
+
+
+def _row_to_analysis_dict(r: Any) -> Dict[str, Any]:
+    return {
+        "id": int(r["id"]),
+        "user_id": int(r["user_id"]),
+        "analysis_type": r["analysis_type"],
+        "target_key": r["target_key"],
+        "provider": r["provider"],
+        "model": r["model"],
+        "prompt_version": r["prompt_version"],
+        "parameters": json.loads(r["parameters_json"] or "{}"),
+        "facts": json.loads(r["facts_json"] or "{}"),
+        "sources": json.loads(r["sources_json"] or "[]"),
+        "warnings": json.loads(r["warnings_json"] or "[]"),
+        "result": json.loads(r["result_json"] or "{}"),
+        "created_at": r["created_at"],
+    }
+
+
+def _get_latest_saved_analysis(user_id: int, analysis_type: str, target_key: str) -> Optional[Dict[str, Any]]:
+    migrate_ai_stage4_tables()
+    conn = get_conn()
+    row = conn.execute(
+        """
+        SELECT * FROM ai_analysis_history
+        WHERE user_id = ? AND analysis_type = ? AND target_key = ?
+        ORDER BY id DESC LIMIT 1
+        """,
+        (user_id, analysis_type.upper().strip(), target_key.upper().strip()),
+    ).fetchone()
+    conn.close()
+    return _row_to_analysis_dict(row) if row else None
+
+
+def list_analysis_history(
+    user_id: int = 1,
+    analysis_type: str = "",
+    target_key: str = "",
+    limit: int = 20,
+) -> List[Dict[str, Any]]:
+    """Lista o histórico de análises salvas para consulta, auditoria e comparação."""
+    migrate_ai_stage4_tables()
+    conn = get_conn()
+    clauses = ["user_id = ?"]
+    params: List[Any] = [user_id]
+    if analysis_type and analysis_type.upper() != "ALL":
+        clauses.append("analysis_type = ?")
+        params.append(analysis_type.upper().strip())
+    if target_key and target_key.upper() != "ALL":
+        clauses.append("target_key = ?")
+        params.append(target_key.upper().strip())
+    params.append(max(1, min(100, int(limit))))
+    sql = f"SELECT * FROM ai_analysis_history WHERE {' AND '.join(clauses)} ORDER BY id DESC LIMIT ?"
+    rows = conn.execute(sql, tuple(params)).fetchall()
+    conn.close()
+    return [_row_to_analysis_dict(r) for r in rows]
+
+
+def get_analysis_by_id(analysis_id: int, user_id: int = 1) -> Optional[Dict[str, Any]]:
+    migrate_ai_stage4_tables()
+    conn = get_conn()
+    row = conn.execute(
+        "SELECT * FROM ai_analysis_history WHERE id = ? AND user_id = ?",
+        (int(analysis_id), user_id),
+    ).fetchone()
+    conn.close()
+    return _row_to_analysis_dict(row) if row else None
+
+
+def _compute_facts_delta(
+    prev_record: Optional[Dict[str, Any]],
+    current_facts: Dict[str, Any],
+    current_calcs: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
+    """Calcula objetivamente 'O que mudou desde a última análise?' comparando fatos observados e cálculos."""
+    if not prev_record:
+        return {
+            "has_previous": False,
+            "previous_id": None,
+            "previous_date": "",
+            "changes": [],
+            "summary": "Primeira análise registrada para este escopo no histórico do SIM.",
+        }
+
+    prev_facts = prev_record.get("facts") or {}
+    changes: List[str] = []
+
+    label_map = {
+        "total_patrimony_brl": ("Patrimônio Total (R$)", "money_brl"),
+        "total_current_brl": ("Patrimônio Atual (R$)", "money_brl"),
+        "total_invested_brl": ("Total Investido (R$)", "money_brl"),
+        "profit_brl": ("Resultado Acumulado (R$)", "money_brl"),
+        "profit_pct": ("Rentabilidade (%)", "pct"),
+        "hhi": ("Índice de Concentração HHI", "num"),
+        "top1_pct": ("Peso da Maior Posição (%)", "pct"),
+        "positions_count": ("Quantidade de Ativos", "int"),
+        "holdings_count": ("Quantidade de Posições", "int"),
+        "last_price": ("Cotação do Ativo", "num"),
+        "dy_12m": ("Dividend Yield 12m (%)", "pct"),
+        "pl": ("P/L", "num"),
+        "pvp": ("P/VP", "num"),
+        "usd_brl": ("Câmbio USD/BRL", "num"),
+        "news_count": ("Notícias Recentes", "int"),
+        "official_docs_count": ("Relatórios Oficiais", "int"),
+    }
+
+    for k, (lbl, fmt) in label_map.items():
+        if k in current_facts and k in prev_facts:
+            try:
+                v_now = float(current_facts[k])
+                v_old = float(prev_facts[k])
+                diff = v_now - v_old
+                if abs(diff) >= 0.01:
+                    if fmt == "money_brl":
+                        changes.append(f"{lbl}: de R$ {v_old:,.2f} para R$ {v_now:,.2f} ({diff:+,.2f})")
+                    elif fmt == "pct":
+                        changes.append(f"{lbl}: de {v_old:.2f}% para {v_now:.2f}% ({diff:+.2f} p.p.)")
+                    elif fmt == "int":
+                        changes.append(f"{lbl}: de {int(v_old)} para {int(v_now)} ({int(diff):+d})")
+                    else:
+                        changes.append(f"{lbl}: de {v_old:.2f} para {v_now:.2f} ({diff:+.2f})")
+            except Exception:
+                pass
+
+    if not changes:
+        summary = f"Sem alterações numéricas relevantes nos fatos monitorados desde a análise de {prev_record['created_at']}."
+    else:
+        summary = f"{len(changes)} mudança(s) detectada(s) desde a análise anterior ({prev_record['created_at']}): " + "; ".join(changes[:4]) + "."
+
+    return {
+        "has_previous": True,
+        "previous_id": prev_record["id"],
+        "previous_date": prev_record["created_at"],
+        "previous_provider": f"{prev_record.get('provider', '')} · {prev_record.get('model', '')}".strip(" ·"),
+        "changes": changes,
+        "summary": summary,
+    }
+
+
+def compare_saved_analyses(
+    id_a: Optional[int] = None,
+    id_b: Optional[int] = None,
+    analysis_type: str = "PORTFOLIO",
+    target_key: str = "CARTEIRA",
+    user_id: int = 1,
+) -> Dict[str, Any]:
+    """Compara duas análises salvas (ou as duas mais recentes de um mesmo escopo)."""
+    if id_a and id_b:
+        rec_older = get_analysis_by_id(min(id_a, id_b), user_id=user_id)
+        rec_newer = get_analysis_by_id(max(id_a, id_b), user_id=user_id)
+    else:
+        recent = list_analysis_history(user_id=user_id, analysis_type=analysis_type, target_key=target_key, limit=2)
+        if len(recent) < 2:
+            return {
+                "available": False,
+                "reason": "São necessárias pelo menos 2 análises salvas deste escopo para comparação histórica.",
+                "records_found": len(recent),
+                "latest": recent[0] if recent else None,
+            }
+        rec_newer, rec_older = recent[0], recent[1]
+
+    if not rec_older or not rec_newer:
+        raise ValueError("Uma ou ambas as análises solicitadas não foram encontradas.")
+
+    delta = _compute_facts_delta(rec_older, rec_newer.get("facts") or {})
+    return {
+        "available": True,
+        "analysis_type": rec_newer["analysis_type"],
+        "target_key": rec_newer["target_key"],
+        "older": {
+            "id": rec_older["id"],
+            "created_at": rec_older["created_at"],
+            "provider": rec_older["provider"],
+            "model": rec_older["model"],
+            "prompt_version": rec_older["prompt_version"],
+            "facts": rec_older["facts"],
+            "result": rec_older["result"],
+            "warnings": rec_older["warnings"],
+        },
+        "newer": {
+            "id": rec_newer["id"],
+            "created_at": rec_newer["created_at"],
+            "provider": rec_newer["provider"],
+            "model": rec_newer["model"],
+            "prompt_version": rec_newer["prompt_version"],
+            "facts": rec_newer["facts"],
+            "result": rec_newer["result"],
+            "warnings": rec_newer["warnings"],
+        },
+        "delta": delta,
+    }
+
+
+def analyze_portfolio_deep(user_id: int = 1) -> Dict[str, Any]:
+    """
+    Ação do Analista de IA: 'Analisar minha carteira' + 'O que merece minha atenção?' + 'O que mudou desde a última análise?'.
+    Envia apenas os dados estruturados necessários, separa Fato Observado, Cálculo SIM e Interpretação IA,
+    aponta riscos/argumentos contrários e salva no histórico.
+    """
+    settings = get_raw_settings(user_id=user_id)
+    investor_profile = settings.get("investor_profile", "RENDA_E_VALOR")
+    min_dy_target = float(settings.get("min_dy_target") or 8.0)
+
+    dash = get_dashboard(user_id=user_id, period="ALL", country="ALL", currency="ALL", asset_class="ALL", record=False)
+    kpis = dash.get("kpis", {})
+    conc = dash.get("concentration", {})
+    dist = dash.get("distribution", {})
+    fx_info = dash.get("fx", {})
+    dq = dash.get("data_quality", {})
+    holdings = dash.get("holdings", [])
+
+    conn_fx = get_conn()
+    est_tx_cnt = conn_fx.execute(
+        "SELECT COUNT(*) FROM transactions WHERE user_id = ? AND fx_estimated = 1",
+        (user_id,),
+    ).fetchone()[0]
+    conn_fx.close()
+
+    warnings: List[str] = []
+    if not holdings:
+        warnings.append("A carteira não possui posições abertas no momento; a análise reflete patrimônio zerado.")
+    if dq.get("stale_codes"):
+        warnings.append(
+            f"Cotações com mais de 24h sem atualização para: {', '.join(dq['stale_codes'][:6])}."
+        )
+    if est_tx_cnt > 0:
+        warnings.append(
+            f"{est_tx_cnt} operação(ões) em moeda estrangeira usam câmbio estimado."
+        )
+    if dash.get("dividends", {}).get("has_estimated_fx"):
+        warnings.append(
+            "Proventos em USD foram convertidos pelo câmbio atual (sem câmbio histórico informado)."
+        )
+
+    facts_observed = {
+        "kind": "FATO_OBSERVADO",
+        "generated_at": dash.get("generated_at"),
+        "holdings_count": int(kpis.get("holdings_count") or 0),
+        "total_invested_brl": round(float(kpis.get("total_invested_brl") or 0.0), 2),
+        "total_current_brl": round(float(kpis.get("total_current_brl") or 0.0), 2),
+        "dividends_received_brl": round(float(kpis.get("dividends_period_brl") or 0.0), 2),
+        "usd_brl": float(fx_info.get("usd_brl") or 0.0),
+        "usd_brl_updated_at": fx_info.get("updated_at") or "",
+        "usd_brl_source": fx_info.get("source") or "",
+        "top_holdings": [
+            {
+                "code": h["code"],
+                "name": h["name"],
+                "asset_class": h["asset_class"],
+                "country": h["country"],
+                "currency": h["currency"],
+                "sector": h["sector"],
+                "invested_brl": h["invested_brl"],
+                "current_brl": h["current_brl"],
+                "weight_pct": h["weight_pct"],
+            }
+            for h in holdings[:10]
+        ],
+    }
+
+    sim_calculations = {
+        "kind": "CALCULO_SIM",
+        "profit_brl": round(float(kpis.get("profit_brl") or 0.0), 2),
+        "profit_pct": round(float(kpis.get("profit_pct") or 0.0), 2),
+        "unrealized_profit_brl": round(float(kpis.get("unrealized_profit_brl") or 0.0), 2),
+        "realized_profit_brl": round(float(kpis.get("realized_profit_brl") or 0.0), 2),
+        "top1_pct": round(float(conc.get("top1_pct") or 0.0), 2),
+        "top5_pct": round(float(conc.get("top5_pct") or 0.0), 2),
+        "top10_pct": round(float(conc.get("top10_pct") or 0.0), 2),
+        "hhi": round(float(conc.get("hhi") or 0.0), 4),
+        "effective_positions": round(float(conc.get("effective_positions") or 0.0), 2),
+        "by_class": dist.get("by_class", []),
+        "by_country": dist.get("by_country", []),
+        "by_currency": dist.get("by_currency", []),
+        "by_sector": dist.get("by_sector", [])[:8],
+    }
+
+    prev_record = _get_latest_saved_analysis(user_id=user_id, analysis_type="PORTFOLIO", target_key="CARTEIRA")
+    flat_facts_for_delta = {
+        "total_invested_brl": facts_observed["total_invested_brl"],
+        "total_current_brl": facts_observed["total_current_brl"],
+        "profit_brl": sim_calculations["profit_brl"],
+        "profit_pct": sim_calculations["profit_pct"],
+        "hhi": sim_calculations["hhi"],
+        "top1_pct": sim_calculations["top1_pct"],
+        "holdings_count": facts_observed["holdings_count"],
+        "usd_brl": facts_observed["usd_brl"],
+    }
+    delta_since_last = _compute_facts_delta(prev_record, flat_facts_for_delta, sim_calculations)
+
+    # Interpretação determinística base (usada como fallback ou complemento rastreável)
+    strengths: List[str] = []
+    risks_and_counterarguments: List[str] = []
+    attention_points: List[str] = []
+
+    if not holdings:
+        summary_text = "Sua carteira ainda não possui ativos cadastrados. Cadastre operações ou importe sua planilha B3 para análise de diversificação e risco."
+        attention_points.append("Nenhuma posição aberta encontrada no banco local.")
+    else:
+        top1 = holdings[0]
+        hhi_val = sim_calculations["hhi"]
+        eff_n = sim_calculations["effective_positions"]
+        classes_cnt = len(sim_calculations["by_class"])
+        countries_cnt = len(sim_calculations["by_country"])
+
+        if classes_cnt >= 3:
+            strengths.append(f"Diversificação entre {classes_cnt} classes de ativos distintas ({', '.join(c['label'] for c in sim_calculations['by_class'][:4])}).")
+        if countries_cnt >= 2:
+            strengths.append("Exposição internacional combinando ativos em BRL e USD, reduzindo risco puramente doméstico.")
+        if sim_calculations["profit_brl"] > 0:
+            strengths.append(f"Resultado acumulado positivo de R$ {sim_calculations['profit_brl']:,.2f} ({sim_calculations['profit_pct']:+.2f}%).")
+        if facts_observed["dividends_received_brl"] > 0:
+            strengths.append(f"Geração de proventos registrados totalizando R$ {facts_observed['dividends_received_brl']:,.2f}.")
+        if not strengths:
+            strengths.append(f"Carteira estruturada com {len(holdings)} posição(ões) rastreada(s) localmente.")
+
+        if sim_calculations["top1_pct"] >= 25.0 or hhi_val >= 0.20:
+            risks_and_counterarguments.append(
+                f"Concentração elevada: a maior posição ({top1['code']}) representa {sim_calculations['top1_pct']:.1f}% da carteira (HHI {hhi_val:.3f}, equivalente a {eff_n:.1f} posições iguais)."
+            )
+            attention_points.append(
+                f"Avaliar se o peso de {top1['code']} ({sim_calculations['top1_pct']:.1f}%) está alinhado à sua tolerância a risco idiossincrático."
+            )
+        else:
+            risks_and_counterarguments.append(
+                f"Mesmo com concentração moderada (Top 1 em {sim_calculations['top1_pct']:.1f}%, HHI {hhi_val:.3f}), correlações macroeconômicas (juros Selic e fiscal no Brasil) podem afetar múltiplas classes simultaneamente."
+            )
+
+        if countries_cnt == 1 and sim_calculations["by_country"][0]["key"] == "BR":
+            risks_and_counterarguments.append(
+                "100% do patrimônio monitorado está concentrado no Brasil (BRL), sujeito ao risco fiscal doméstico e desvalorização cambial."
+            )
+        elif any(c["key"] == "USD" for c in sim_calculations["by_currency"]):
+            risks_and_counterarguments.append(
+                f"Parcela dolarizada sujeita à volatilidade cambial (USD/BRL atual em R$ {facts_observed['usd_brl']:.4f}): valorização do Real reduz o saldo convertido em BRL."
+            )
+
+        if sim_calculations["by_sector"]:
+            top_sec = sim_calculations["by_sector"][0]
+            if top_sec["weight_pct"] >= 30.0:
+                attention_points.append(
+                    f"Setor '{top_sec['label']}' concentra {top_sec['weight_pct']:.1f}% do patrimônio."
+                )
+
+        losers = [h for h in holdings if h["profit_pct"] <= -10.0]
+        if losers:
+            attention_points.append(
+                f"Posições com retração superior a -10% sobre o custo: {', '.join(f'{l['code']} ({l['profit_pct']:+.1f}%)' for l in losers[:4])} — investigar se os fundamentos permanecem intactos antes de qualquer novo aporte."
+            )
+        if not attention_points:
+            attention_points.append("Acompanhar os comunicados trimestrais/mensais dos principais ativos e a evolução dos proventos.")
+
+        summary_text = (
+            f"Carteira com {len(holdings)} posição(ões), patrimônio atual de R$ {facts_observed['total_current_brl']:,.2f} "
+            f"sobre R$ {facts_observed['total_invested_brl']:,.2f} investidos ({sim_calculations['profit_pct']:+.2f}%). "
+            f"A maior posição é {top1['code']} ({sim_calculations['top1_pct']:.1f}%) e o índice HHI é {hhi_val:.3f} "
+            f"({eff_n:.1f} posições equivalentes)."
+        )
+
+    ai_generated = False
+    ai_provider_used = "Motor Analítico Quantitativo SIM (Determinístico)"
+    ai_error = ""
+
+    if settings.get("ai_api_key") and holdings:
+        try:
+            context_payload = {
+                "investor_profile": investor_profile,
+                "min_dy_target_pct": min_dy_target,
+                "facts_observed": facts_observed,
+                "sim_calculations": sim_calculations,
+                "data_warnings": warnings,
+                "delta_since_last": delta_since_last["summary"],
+            }
+            prompt = (
+                "Você é um analista de investimentos criterioso. Analise EXCLUSIVAMENTE os dados estruturados da carteira abaixo. "
+                "NÃO invente cotações, múltiplos, notícias ou ativos que não estejam no JSON fornecido. "
+                "Toda afirmação factual deve citar os números fornecidos.\n\n"
+                f"DADOS DA CARTEIRA (JSON):\n{json.dumps(context_payload, ensure_ascii=False)}\n\n"
+                "Retorne estritamente um objeto JSON com as seguintes chaves:\n"
+                '- "summary": string (síntese executiva de 3 a 4 frases distinguindo fatos da carteira e interpretação)\n'
+                '- "strengths": lista de 2 a 4 strings com pontos fortes reais da carteira\n'
+                '- "risks_and_counterarguments": lista de 2 a 4 strings com riscos concretos, concentrações e argumentos contrários\n'
+                '- "attention_points": lista de 2 a 4 strings respondendo objetivamente "O que merece minha atenção agora?" sem emitir ordens de compra/venda.'
+            )
+            llm_resp = call_configured_llm(prompt, json_mode=True, user_id=user_id)
+            if llm_resp:
+                parsed = json.loads(_clean_json_markdown(llm_resp))
+                if parsed.get("summary"):
+                    summary_text = str(parsed["summary"])
+                    if isinstance(parsed.get("strengths"), list) and parsed["strengths"]:
+                        strengths = [str(x) for x in parsed["strengths"][:5]]
+                    if isinstance(parsed.get("risks_and_counterarguments"), list) and parsed["risks_and_counterarguments"]:
+                        risks_and_counterarguments = [str(x) for x in parsed["risks_and_counterarguments"][:5]]
+                    if isinstance(parsed.get("attention_points"), list) and parsed["attention_points"]:
+                        attention_points = [str(x) for x in parsed["attention_points"][:5]]
+                    ai_generated = True
+                    ai_provider_used = f"{settings.get('ai_provider')} · {settings.get('ai_model')}"
+        except Exception as exc:
+            ai_error = _sanitize_error_message(str(exc), settings.get("ai_api_key", ""))
+            warnings.append(f"Falha ao consultar API de IA ({ai_error}); exibindo interpretação determinística do SIM.")
+    elif not settings.get("ai_api_key"):
+        warnings.append("Chave de API de IA não configurada; análise gerada pelo motor analítico local do SIM.")
+
+    sources = [
+        {
+            "name": "Posições e Operações no Banco Local (SQLite)",
+            "kind": "FATO_OBSERVADO",
+            "updated_at": dash.get("generated_at", ""),
+            "url": "",
+            "ticker": "CARTEIRA",
+        },
+        {
+            "name": f"Câmbio USD/BRL ({fx_info.get('source', 'Catálogo')})",
+            "kind": "FATO_OBSERVADO",
+            "updated_at": fx_info.get("updated_at") or "",
+            "url": "",
+            "ticker": "USDBRL",
+        },
+        {
+            "name": "Consolidação de Alocação, Concentração HHI e Retorno (Dashboard SIM)",
+            "kind": "CALCULO_SIM",
+            "updated_at": dash.get("generated_at", ""),
+            "url": "",
+            "ticker": "CARTEIRA",
+        },
+    ]
+
+    ai_interpretation = {
+        "kind": "INTERPRETACAO_IA",
+        "ai_generated": ai_generated,
+        "provider_used": ai_provider_used,
+        "prompt_version": PROMPT_VERSION,
+        "summary": summary_text,
+        "strengths": strengths,
+        "risks_and_counterarguments": risks_and_counterarguments,
+        "attention_points": attention_points,
+    }
+
+    result_payload = {
+        "analysis_type": "PORTFOLIO",
+        "target_key": "CARTEIRA",
+        "generated_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        "prompt_version": PROMPT_VERSION,
+        "ai_generated": ai_generated,
+        "ai_provider_used": ai_provider_used,
+        "ai_error": ai_error,
+        "facts_observed": facts_observed,
+        "sim_calculations": sim_calculations,
+        "ai_interpretation": ai_interpretation,
+        "delta_since_last": delta_since_last,
+        "data_warnings": warnings,
+        "sources": sources,
+        "limitations": STANDARD_LIMITATIONS,
+    }
+
+    analysis_id = save_analysis_record(
+        user_id=user_id,
+        analysis_type="PORTFOLIO",
+        target_key="CARTEIRA",
+        provider=settings.get("ai_provider", "SIM_QUANT") if ai_generated else "SIM_QUANT",
+        model=settings.get("ai_model", "sim-quant-v1") if ai_generated else "sim-quant-v1",
+        parameters={"investor_profile": investor_profile, "min_dy_target": min_dy_target},
+        facts=flat_facts_for_delta,
+        sources=sources,
+        warnings=warnings,
+        result={
+            "summary": summary_text,
+            "strengths": strengths,
+            "risks_and_counterarguments": risks_and_counterarguments,
+            "attention_points": attention_points,
+            "delta_since_last": delta_since_last,
+        },
+    )
+    result_payload["analysis_id"] = analysis_id
+    return result_payload
+
+
+def analyze_asset_deep(ticker: str, period: str = "1Y", user_id: int = 1) -> Dict[str, Any]:
+    """
+    Ação do Analista de IA: 'Analisar este ativo: histórico, dados recentes, notícias e riscos' + 'O que mudou desde a última análise?'.
+    Separa Fato Observado, Cálculo SIM e Interpretação IA, sem classificar como barato/caro apenas pela média histórica.
+    """
+    t_up = (ticker or "").upper().strip()
+    if not t_up:
+        raise ValueError("Ticker é obrigatório para análise do ativo.")
+
+    chart_data = get_asset_chart_and_dividends(t_up, period_key=period, user_id=user_id)
+    if not chart_data:
+        raise ValueError(f"Ativo {t_up} não encontrado.")
+
+    settings = get_raw_settings(user_id=user_id)
+    investor_profile = settings.get("investor_profile", "RENDA_E_VALOR")
+    macro = fetch_macro_indicators()
+
+    asset = chart_data["asset"]
+    quote_meta = chart_data.get("quote_meta", {})
+    hist_meta = chart_data.get("history_meta", {})
+    hist_stats = chart_data.get("historical_stats", {})
+    bench_comp = chart_data.get("benchmark_comparison", {})
+    user_pos = chart_data.get("user_position", {})
+    prof = chart_data.get("class_profile") or get_asset_specialized_profile(asset)
+    val_models = _build_valuation_and_viability_models(asset, prof)
+
+    news_data = fetch_asset_news(t_up)
+    reports_data = fetch_official_reports(t_up)
+    news_items = news_data.get("items", []) if isinstance(news_data, dict) else []
+    official_docs = reports_data.get("reports", []) if isinstance(reports_data, dict) else []
+
+    warnings: List[str] = []
+    if quote_meta.get("is_stale"):
+        warnings.append(
+            f"Cotação de {t_up} sem atualização recente (última atualização registrada: {quote_meta.get('updated_at') or 'catálogo inicial'})."
+        )
+    if hist_meta.get("data_state") == "UNAVAILABLE":
+        warnings.append("Série histórica de preços indisponível no momento (sem conexão com o provedor e sem cache local).")
+    elif hist_meta.get("data_state") == "CACHED" and hist_meta.get("warning"):
+        warnings.append(hist_meta["warning"])
+    if isinstance(news_data, dict) and news_data.get("data_state") in ("UNAVAILABLE", "EMPTY"):
+        warnings.append("Nenhuma notícia recente disponível nas fontes públicas ou cache local para este ativo.")
+    elif isinstance(news_data, dict) and news_data.get("warning"):
+        warnings.append(news_data["warning"])
+    if asset.get("asset_class") == "ACAO_BR" and float(asset.get("pl") or 0) <= 0:
+        warnings.append("Múltiplo P/L ausente ou igual a zero no catálogo atual; avaliação de valuation por lucros limitada.")
+
+    facts_observed = {
+        "kind": "FATO_OBSERVADO",
+        "ticker": t_up,
+        "name": asset.get("name", t_up),
+        "asset_class": asset.get("asset_class", "ACAO_BR"),
+        "sector": asset.get("sector", ""),
+        "currency": asset.get("currency", "BRL"),
+        "market": quote_meta.get("market", "BR"),
+        "last_price": float(asset.get("last_price") or 0.0),
+        "change_pct_day": float(asset.get("change_pct") or 0.0),
+        "dy_12m": float(asset.get("dy_12m") or 0.0),
+        "pl": float(asset.get("pl") or 0.0),
+        "pvp": float(asset.get("pvp") or 0.0),
+        "quote_source": quote_meta.get("source") or "Catálogo local",
+        "quote_updated_at": quote_meta.get("updated_at") or "",
+        "macro_context": {
+            "selic_pct": float(macro.get("selic") or 0.0),
+            "cdi_pct": float(macro.get("cdi") or 0.0),
+            "ipca_12m_pct": float(macro.get("ipca_12m") or 0.0),
+            "usd_brl": float(macro.get("usd_brl") or 0.0),
+        },
+        "recent_news": [
+            {
+                "title": n.get("title", ""),
+                "source": n.get("source", ""),
+                "published": n.get("published", ""),
+                "link": n.get("link", ""),
+            }
+            for n in news_items[:5]
+        ],
+        "official_documents": [
+            {
+                "title": d.get("title", ""),
+                "date": d.get("date", ""),
+                "source": d.get("source", ""),
+                "url": d.get("url", ""),
+            }
+            for d in official_docs[:5]
+        ],
+    }
+
+    sim_calculations = {
+        "kind": "CALCULO_SIM",
+        "period": period.upper(),
+        "period_change_pct": float(chart_data.get("period_change_pct") or 0.0),
+        "historical_stats": hist_stats,
+        "benchmark_comparison": bench_comp,
+        "valuation_models": {
+            "bazin": val_models.get("bazin", {}),
+            "graham": val_models.get("graham", {}),
+        },
+        "user_position": user_pos,
+    }
+
+    prev_record = _get_latest_saved_analysis(user_id=user_id, analysis_type="ASSET", target_key=t_up)
+    flat_facts = {
+        "last_price": facts_observed["last_price"],
+        "dy_12m": facts_observed["dy_12m"],
+        "pl": facts_observed["pl"],
+        "pvp": facts_observed["pvp"],
+        "news_count": len(news_items),
+        "official_docs_count": len(official_docs),
+    }
+    delta_since_last = _compute_facts_delta(prev_record, flat_facts, sim_calculations)
+
+    # Fatores positivos, riscos e argumentos contrários determinísticos baseados nos dados reais
+    positive_factors: List[str] = []
+    risks_and_counterarguments: List[str] = []
+    attention_points: List[str] = []
+
+    cls = facts_observed["asset_class"]
+    dy = facts_observed["dy_12m"]
+    pvp = facts_observed["pvp"]
+    pl = facts_observed["pl"]
+    selic = facts_observed["macro_context"]["selic_pct"]
+
+    if dy >= 8.0:
+        positive_factors.append(f"Dividend Yield de 12 meses observado em {dy:.2f}% a.a.")
+    if cls == "FII" and 0 < pvp <= 0.98:
+        positive_factors.append(f"Negociando a P/VP de {pvp:.2f}x (abaixo do valor patrimonial de referência).")
+    elif cls == "ACAO_BR" and 0 < pl <= 10.0:
+        positive_factors.append(f"Múltiplo P/L observado em {pl:.1f}x.")
+    if bench_comp.get("available") and float(bench_comp.get("relative_diff_pp") or 0.0) > 0:
+        positive_factors.append(
+            f"No período ({period.upper()}), acumulou {bench_comp['asset_return_pct']:+.2f}% vs {bench_comp['benchmark_return_pct']:+.2f}% do {bench_comp['benchmark_name']} ({bench_comp['relative_diff_pp']:+.2f} p.p.)."
+        )
+    if official_docs:
+        positive_factors.append(f"{len(official_docs)} documento(s) oficial(is) disponível(is) para auditoria direta ({official_docs[0]['title']}).")
+    if not positive_factors:
+        positive_factors.append(f"Ativo monitorado com cotação em {facts_observed['currency']} {facts_observed['last_price']:.2f} ({facts_observed['quote_source']}).")
+
+    # Riscos e argumentos contrários obrigatórios (incluindo juros, inflação, câmbio e armadilha de média histórica)
+    if hist_stats.get("available"):
+        dist_avg = float(hist_stats.get("distance_from_avg_pct") or 0.0)
+        if dist_avg < -3.0:
+            risks_and_counterarguments.append(
+                f"Cotação está {dist_avg:+.2f}% abaixo da média do período ({facts_observed['currency']} {hist_stats['avg_price']:.2f}), mas preço abaixo da média histórica não significa que o ativo esteja barato: pode refletir queda de lucro, vacância ou juros altos (Selic {selic:.2f}% a.a.)."
+            )
+        elif dist_avg > 3.0:
+            risks_and_counterarguments.append(
+                f"Cotação está {dist_avg:+.2f}% acima da média do período ({facts_observed['currency']} {hist_stats['avg_price']:.2f}), reduzindo a margem de segurança caso o crescimento de resultados desacelere."
+            )
+
+    if cls in ("ACAO_BR", "FII") and selic >= 10.0:
+        risks_and_counterarguments.append(
+            f"Custo de oportunidade elevado no Brasil: com Selic em {selic:.2f}% a.a. e CDI em {facts_observed['macro_context']['cdi_pct']:.2f}% a.a., ativos de renda variável exigem prêmio de risco consistente sobre a renda fixa."
+        )
+    if cls == "STOCK_US":
+        risks_and_counterarguments.append(
+            f"Exposição cambial USD/BRL (R$ {facts_observed['macro_context']['usd_brl']:.4f}) e retenção de 30% de imposto sobre dividendos pagos nos EUA para não residentes."
+        )
+    if bench_comp.get("available") and float(bench_comp.get("relative_diff_pp") or 0.0) < 0:
+        risks_and_counterarguments.append(
+            f"Desempenho inferior ao índice {bench_comp['benchmark_name']} no período ({bench_comp['relative_diff_pp']:+.2f} p.p.)."
+        )
+    if not risks_and_counterarguments:
+        risks_and_counterarguments.append(
+            "Risco de mercado e variação de resultados operacionais: múltiplos passados não garantem manutenção de margens ou proventos."
+        )
+
+    if user_pos.get("has_position"):
+        attention_points.append(
+            f"Você possui {user_pos['quantity']:g} unidades ao Preço Médio de {facts_observed['currency']} {user_pos['avg_price']:.2f} (cotação atual {facts_observed['currency']} {facts_observed['last_price']:.2f})."
+        )
+    if news_items:
+        attention_points.append(f"Notícia mais recente ({news_items[0]['published']}): \"{news_items[0]['title']}\" ({news_items[0]['source']}).")
+    if official_docs:
+        attention_points.append(f"Verificar o documento oficial mais recente: {official_docs[0]['title']} ({official_docs[0]['date']}).")
+
+    summary_text = (
+        f"{t_up} ({facts_observed['name']}) negocia a {facts_observed['currency']} {facts_observed['last_price']:.2f} "
+        f"(Fonte: {facts_observed['quote_source']}, atualizado em {facts_observed['quote_updated_at'] or 'catálogo'}). "
+        + (
+            f"No período {period.upper()}, variou {sim_calculations['period_change_pct']:+.2f}% "
+            f"(faixa {facts_observed['currency']} {hist_stats['min_price']:.2f} – {hist_stats['max_price']:.2f}, média {hist_stats['avg_price']:.2f}). "
+            if hist_stats.get("available")
+            else "Série histórica não disponível no momento; análise baseada nos indicadores de catálogo e documentos locais. "
+        )
+        + f"DY 12m de {dy:.2f}% e P/VP de {pvp:.2f}x, em cenário de Selic a {selic:.2f}% a.a."
+    )
+
+    ai_generated = False
+    ai_provider_used = "Motor Analítico Quantitativo SIM (Determinístico)"
+    ai_error = ""
+
+    if settings.get("ai_api_key"):
+        try:
+            context_payload = {
+                "investor_profile": investor_profile,
+                "facts_observed": facts_observed,
+                "sim_calculations": sim_calculations,
+                "data_warnings": warnings,
+                "delta_since_last": delta_since_last["summary"],
+            }
+            prompt = (
+                f"Analise o ativo {t_up} usando EXCLUSIVAMENTE os dados estruturados abaixo. "
+                "NÃO invente cotações, fundamentos, notícias ou links. "
+                "Não classifique o ativo como barato ou caro apenas pela média histórica: considere múltiplos, proventos, juros (Selic/CDI), inflação (IPCA) e câmbio.\n\n"
+                f"DADOS DO ATIVO (JSON):\n{json.dumps(context_payload, ensure_ascii=False)}\n\n"
+                "Retorne estritamente um objeto JSON com as chaves:\n"
+                '- "summary": string (síntese analítica de 3 a 4 frases baseada nos dados fornecidos)\n'
+                '- "positive_factors": lista de 2 a 4 strings com fatores positivos apoiados nos dados\n'
+                '- "risks_and_counterarguments": lista de 2 a 4 strings com riscos concretos e argumentos contrários à tese\n'
+                '- "attention_points": lista de 2 a 4 strings com pontos que merecem investigação adicional pelo investidor.'
+            )
+            llm_resp = call_configured_llm(prompt, json_mode=True, user_id=user_id)
+            if llm_resp:
+                parsed = json.loads(_clean_json_markdown(llm_resp))
+                if parsed.get("summary"):
+                    summary_text = str(parsed["summary"])
+                    if isinstance(parsed.get("positive_factors"), list) and parsed["positive_factors"]:
+                        positive_factors = [str(x) for x in parsed["positive_factors"][:5]]
+                    if isinstance(parsed.get("risks_and_counterarguments"), list) and parsed["risks_and_counterarguments"]:
+                        risks_and_counterarguments = [str(x) for x in parsed["risks_and_counterarguments"][:5]]
+                    if isinstance(parsed.get("attention_points"), list) and parsed["attention_points"]:
+                        attention_points = [str(x) for x in parsed["attention_points"][:5]]
+                    ai_generated = True
+                    ai_provider_used = f"{settings.get('ai_provider')} · {settings.get('ai_model')}"
+        except Exception as exc:
+            ai_error = _sanitize_error_message(str(exc), settings.get("ai_api_key", ""))
+            warnings.append(f"Falha ao consultar API de IA ({ai_error}); exibindo interpretação determinística do SIM.")
+    else:
+        warnings.append("Chave de API de IA não configurada; análise gerada pelo motor analítico local do SIM.")
+
+    sources: List[Dict[str, str]] = [
+        {
+            "name": f"Cotação e Indicadores ({facts_observed['quote_source']})",
+            "kind": "FATO_OBSERVADO",
+            "updated_at": facts_observed["quote_updated_at"],
+            "url": "",
+            "ticker": t_up,
+        },
+        {
+            "name": f"Histórico de Preços ({hist_meta.get('source', 'Yahoo Finance')}) [{hist_meta.get('data_state', '')}]",
+            "kind": "FATO_OBSERVADO",
+            "updated_at": hist_meta.get("updated_at") or "",
+            "url": "",
+            "ticker": t_up,
+        },
+        {
+            "name": "Estatísticas de Faixa, Média, Benchmark e Valuation (Bazin/Graham) — SIM",
+            "kind": "CALCULO_SIM",
+            "updated_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            "url": "",
+            "ticker": t_up,
+        },
+    ]
+    for d in official_docs[:3]:
+        sources.append({
+            "name": f"Documento Oficial: {d.get('title', '')}",
+            "kind": "FATO_OBSERVADO",
+            "updated_at": d.get("date", ""),
+            "url": d.get("url", ""),
+            "ticker": t_up,
+        })
+    for n in news_items[:3]:
+        sources.append({
+            "name": f"Notícia ({n.get('source', 'RSS')}): {n.get('title', '')[:70]}",
+            "kind": "FATO_OBSERVADO",
+            "updated_at": n.get("published", ""),
+            "url": n.get("link", ""),
+            "ticker": t_up,
+        })
+
+    ai_interpretation = {
+        "kind": "INTERPRETACAO_IA",
+        "ai_generated": ai_generated,
+        "provider_used": ai_provider_used,
+        "prompt_version": PROMPT_VERSION,
+        "summary": summary_text,
+        "positive_factors": positive_factors,
+        "risks_and_counterarguments": risks_and_counterarguments,
+        "attention_points": attention_points,
+    }
+
+    result_payload = {
+        "analysis_type": "ASSET",
+        "target_key": t_up,
+        "generated_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        "prompt_version": PROMPT_VERSION,
+        "ai_generated": ai_generated,
+        "ai_provider_used": ai_provider_used,
+        "ai_error": ai_error,
+        "facts_observed": facts_observed,
+        "sim_calculations": sim_calculations,
+        "ai_interpretation": ai_interpretation,
+        "delta_since_last": delta_since_last,
+        "data_warnings": warnings,
+        "sources": sources,
+        "limitations": STANDARD_LIMITATIONS,
+    }
+
+    analysis_id = save_analysis_record(
+        user_id=user_id,
+        analysis_type="ASSET",
+        target_key=t_up,
+        provider=settings.get("ai_provider", "SIM_QUANT") if ai_generated else "SIM_QUANT",
+        model=settings.get("ai_model", "sim-quant-v1") if ai_generated else "sim-quant-v1",
+        parameters={"ticker": t_up, "period": period.upper(), "investor_profile": investor_profile},
+        facts=flat_facts,
+        sources=sources,
+        warnings=warnings,
+        result={
+            "summary": summary_text,
+            "positive_factors": positive_factors,
+            "risks_and_counterarguments": risks_and_counterarguments,
+            "attention_points": attention_points,
+            "delta_since_last": delta_since_last,
+        },
+    )
+    result_payload["analysis_id"] = analysis_id
+    return result_payload
+
+
+def compare_similar_assets(tickers: List[str], period: str = "1Y", user_id: int = 1) -> Dict[str, Any]:
+    """
+    Ação do Analista de IA: 'Comparar ativos semelhantes com métricas comparáveis'.
+    Se apenas 1 ticker for informado, seleciona automaticamente até 2 pares da mesma classe/setor do catálogo.
+    """
+    clean_tickers = []
+    for t in tickers or []:
+        tu = (t or "").upper().strip().replace(".SA", "")
+        if tu and tu not in clean_tickers:
+            clean_tickers.append(tu)
+
+    if not clean_tickers:
+        raise ValueError("Informe ao menos um ativo para comparação.")
+
+    conn = get_conn()
+    all_cat = [dict(r) for r in conn.execute("SELECT * FROM assets_catalog").fetchall()]
+    conn.close()
+    cat_map = {r["ticker"].upper(): r for r in all_cat}
+
+    if len(clean_tickers) == 1:
+        base_t = clean_tickers[0]
+        base_row = cat_map.get(base_t)
+        if base_row:
+            base_cls = base_row.get("asset_class", "ACAO_BR")
+            base_sec = (base_row.get("sector") or "").lower()
+            same_sec = [
+                r["ticker"] for r in all_cat
+                if r["ticker"] != base_t and r.get("asset_class") == base_cls and (r.get("sector") or "").lower() == base_sec
+            ]
+            same_cls = [
+                r["ticker"] for r in all_cat
+                if r["ticker"] != base_t and r.get("asset_class") == base_cls and r["ticker"] not in same_sec
+            ]
+            peers = (same_sec + same_cls)[:2]
+            clean_tickers.extend(peers)
+
+    clean_tickers = clean_tickers[:4]
+    if len(clean_tickers) < 2:
+        raise ValueError("São necessários ao menos 2 ativos para realizar a comparação.")
+
+    comparison_items: List[Dict[str, Any]] = []
+    warnings: List[str] = []
+    sources: List[Dict[str, str]] = []
+
+    for t in clean_tickers:
+        c_data = get_asset_chart_and_dividends(t, period_key=period, user_id=user_id)
+        if not c_data:
+            warnings.append(f"Ativo {t} não encontrado no catálogo.")
+            continue
+        a = c_data["asset"]
+        qm = c_data.get("quote_meta", {})
+        hs = c_data.get("historical_stats", {})
+        prof = c_data.get("class_profile") or get_asset_specialized_profile(a)
+        vm = _build_valuation_and_viability_models(a, prof)
+        bazin = vm.get("bazin", {})
+        graham = vm.get("graham", {})
+
+        if qm.get("is_stale"):
+            warnings.append(f"Cotação de {t} sem atualização recente ({qm.get('updated_at') or 'catálogo inicial'}).")
+
+        comparison_items.append({
+            "ticker": t,
+            "name": a.get("name", t),
+            "asset_class": a.get("asset_class", "ACAO_BR"),
+            "sector": a.get("sector", ""),
+            "currency": a.get("currency", "BRL"),
+            "market": qm.get("market", "BR"),
+            "last_price": float(a.get("last_price") or 0.0),
+            "change_pct_day": float(a.get("change_pct") or 0.0),
+            "period_change_pct": float(c_data.get("period_change_pct") or 0.0),
+            "dy_12m": float(a.get("dy_12m") or 0.0),
+            "pl": float(a.get("pl") or 0.0),
+            "pvp": float(a.get("pvp") or 0.0),
+            "bazin_ceiling": float(bazin.get("ceiling_price") or 0.0) if bazin.get("applicable") else None,
+            "bazin_margin_pct": float(bazin.get("margin_pct") or 0.0) if bazin.get("applicable") else None,
+            "graham_intrinsic": float(graham.get("intrinsic_value") or 0.0) if graham.get("applicable") else None,
+            "graham_margin_pct": float(graham.get("margin_pct") or 0.0) if graham.get("applicable") else None,
+            "hist_min": hs.get("min_price") if hs.get("available") else None,
+            "hist_max": hs.get("max_price") if hs.get("available") else None,
+            "hist_avg": hs.get("avg_price") if hs.get("available") else None,
+            "distance_from_avg_pct": hs.get("distance_from_avg_pct") if hs.get("available") else None,
+            "quote_source": qm.get("source") or "Catálogo local",
+            "updated_at": qm.get("updated_at") or "",
+        })
+        sources.append({
+            "name": f"{t}: {qm.get('source', 'Catálogo local')}",
+            "kind": "FATO_OBSERVADO",
+            "updated_at": qm.get("updated_at") or "",
+            "url": "",
+            "ticker": t,
+        })
+
+    if len(comparison_items) < 2:
+        raise ValueError("Não foi possível carregar dados suficientes para comparar ao menos 2 ativos.")
+
+    classes_set = {x["asset_class"] for x in comparison_items}
+    currencies_set = {x["currency"] for x in comparison_items}
+    if len(classes_set) > 1:
+        warnings.append(
+            f"Atenção metodológica: os ativos pertencem a classes distintas ({', '.join(sorted(classes_set))}); múltiplos como P/L e P/VP não são diretamente equivalentes entre classes."
+        )
+    if len(currencies_set) > 1:
+        warnings.append(
+            f"Os ativos são cotados em moedas diferentes ({', '.join(sorted(currencies_set))}); compare múltiplos relativos e considere o risco cambial."
+        )
+
+    best_dy = max(comparison_items, key=lambda x: x["dy_12m"])
+    lowest_pvp = min([x for x in comparison_items if x["pvp"] > 0] or comparison_items, key=lambda x: x["pvp"])
+
+    highlights_by_asset = [
+        f"{x['ticker']} ({x['sector'] or x['asset_class']}): Cotação {x['currency']} {x['last_price']:.2f} | DY 12m {x['dy_12m']:.2f}% | P/VP {x['pvp']:.2f}x | P/L {x['pl']:.1f}x | Variação ({period.upper()}) {x['period_change_pct']:+.2f}%."
+        for x in comparison_items
+    ]
+    risks_and_counterarguments = [
+        f"Maior DY atual ({best_dy['ticker']} com {best_dy['dy_12m']:.2f}%) não garante sustentabilidade futura se decorrer de distribuições extraordinárias ou queda recente na cotação.",
+        f"Menor P/VP ({lowest_pvp['ticker']} com {lowest_pvp['pvp']:.2f}x) exige verificar qualidade do portfólio/lucros e alavancagem para descartar desconto justificado por risco.",
+    ]
+    summary_text = (
+        f"Comparação objetiva entre {', '.join(x['ticker'] for x in comparison_items)}: "
+        f"{best_dy['ticker']} apresenta o maior Dividend Yield de 12 meses ({best_dy['dy_12m']:.2f}%), "
+        f"enquanto {lowest_pvp['ticker']} negocia ao menor múltiplo P/VP ({lowest_pvp['pvp']:.2f}x)."
+    )
+
+    settings = get_raw_settings(user_id=user_id)
+    ai_generated = False
+    ai_provider_used = "Motor Analítico Quantitativo SIM (Determinístico)"
+    ai_error = ""
+
+    if settings.get("ai_api_key"):
+        try:
+            prompt = (
+                "Compare objetivamente os ativos abaixo usando EXCLUSIVAMENTE as métricas fornecidas. "
+                "NÃO invente indicadores nem emita ordens de compra ou venda.\n\n"
+                f"ATIVOS COMPARADOS (JSON):\n{json.dumps(comparison_items, ensure_ascii=False)}\n\n"
+                "Retorne estritamente um objeto JSON com as chaves:\n"
+                '- "summary": string (síntese comparativa de 3 a 4 frases)\n'
+                '- "highlights_by_asset": lista de strings (1 destaque factual por ativo comparado)\n'
+                '- "risks_and_counterarguments": lista de 2 a 4 strings com riscos e limitações da comparação.'
+            )
+            llm_resp = call_configured_llm(prompt, json_mode=True, user_id=user_id)
+            if llm_resp:
+                parsed = json.loads(_clean_json_markdown(llm_resp))
+                if parsed.get("summary"):
+                    summary_text = str(parsed["summary"])
+                    if isinstance(parsed.get("highlights_by_asset"), list) and parsed["highlights_by_asset"]:
+                        highlights_by_asset = [str(x) for x in parsed["highlights_by_asset"][:5]]
+                    if isinstance(parsed.get("risks_and_counterarguments"), list) and parsed["risks_and_counterarguments"]:
+                        risks_and_counterarguments = [str(x) for x in parsed["risks_and_counterarguments"][:5]]
+                    ai_generated = True
+                    ai_provider_used = f"{settings.get('ai_provider')} · {settings.get('ai_model')}"
+        except Exception as exc:
+            ai_error = _sanitize_error_message(str(exc), settings.get("ai_api_key", ""))
+            warnings.append(f"Falha ao consultar API de IA ({ai_error}); exibindo comparação determinística do SIM.")
+    else:
+        warnings.append("Chave de API de IA não configurada; comparação gerada pelo motor analítico local do SIM.")
+
+    target_key = "_VS_".join(x["ticker"] for x in comparison_items)
+    prev_record = _get_latest_saved_analysis(user_id=user_id, analysis_type="COMPARISON", target_key=target_key)
+    flat_facts = {f"{x['ticker']}_price": x["last_price"] for x in comparison_items}
+    delta_since_last = _compute_facts_delta(prev_record, flat_facts, {})
+
+    result_payload = {
+        "analysis_type": "COMPARISON",
+        "target_key": target_key,
+        "tickers": [x["ticker"] for x in comparison_items],
+        "period": period.upper(),
+        "generated_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        "prompt_version": PROMPT_VERSION,
+        "ai_generated": ai_generated,
+        "ai_provider_used": ai_provider_used,
+        "ai_error": ai_error,
+        "comparison_table": comparison_items,
+        "ai_interpretation": {
+            "kind": "INTERPRETACAO_IA",
+            "ai_generated": ai_generated,
+            "provider_used": ai_provider_used,
+            "prompt_version": PROMPT_VERSION,
+            "summary": summary_text,
+            "highlights_by_asset": highlights_by_asset,
+            "risks_and_counterarguments": risks_and_counterarguments,
+        },
+        "delta_since_last": delta_since_last,
+        "data_warnings": warnings,
+        "sources": sources,
+        "limitations": STANDARD_LIMITATIONS,
+    }
+
+    analysis_id = save_analysis_record(
+        user_id=user_id,
+        analysis_type="COMPARISON",
+        target_key=target_key,
+        provider=settings.get("ai_provider", "SIM_QUANT") if ai_generated else "SIM_QUANT",
+        model=settings.get("ai_model", "sim-quant-v1") if ai_generated else "sim-quant-v1",
+        parameters={"tickers": [x["ticker"] for x in comparison_items], "period": period.upper()},
+        facts=flat_facts,
+        sources=sources,
+        warnings=warnings,
+        result={
+            "summary": summary_text,
+            "highlights_by_asset": highlights_by_asset,
+            "risks_and_counterarguments": risks_and_counterarguments,
+        },
+    )
+    result_payload["analysis_id"] = analysis_id
+    return result_payload
+

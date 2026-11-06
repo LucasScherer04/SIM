@@ -130,6 +130,48 @@ def migrate_market_cache_tables(conn=None):
         conn.close()
 
 
+def migrate_ai_stage4_tables(conn=None):
+    """Cria tabelas para histórico rastreável de análises da IA e estado dos itens do radar (Etapa 4)."""
+    own_conn = conn is None
+    if own_conn:
+        conn = get_conn()
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS ai_analysis_history (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL DEFAULT 1,
+            analysis_type TEXT NOT NULL,
+            target_key TEXT NOT NULL,
+            provider TEXT NOT NULL DEFAULT '',
+            model TEXT NOT NULL DEFAULT '',
+            prompt_version TEXT NOT NULL DEFAULT '',
+            parameters_json TEXT NOT NULL DEFAULT '{}',
+            facts_json TEXT NOT NULL DEFAULT '{}',
+            sources_json TEXT NOT NULL DEFAULT '[]',
+            warnings_json TEXT NOT NULL DEFAULT '[]',
+            result_json TEXT NOT NULL DEFAULT '{}',
+            created_at TEXT NOT NULL
+        )
+    """)
+    conn.execute("""
+        CREATE INDEX IF NOT EXISTS idx_ai_history_lookup
+        ON ai_analysis_history (user_id, analysis_type, target_key, id DESC)
+    """)
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS radar_item_states (
+            user_id INTEGER NOT NULL DEFAULT 1,
+            item_key TEXT NOT NULL,
+            ticker TEXT NOT NULL DEFAULT '',
+            status TEXT NOT NULL DEFAULT 'NOVO',
+            notes TEXT NOT NULL DEFAULT '',
+            updated_at TEXT NOT NULL,
+            PRIMARY KEY (user_id, item_key)
+        )
+    """)
+    conn.commit()
+    if own_conn:
+        conn.close()
+
+
 def migrate_to_multiuser(conn=None):
     """
     Garante o suporte a múltiplos usuários e dados isolados por conta no SQLite.
@@ -466,6 +508,7 @@ def init_db():
     migrate_fx_columns(conn)
     migrate_snapshots_table(conn)
     migrate_market_cache_tables(conn)
+    migrate_ai_stage4_tables(conn)
     migrate_to_multiuser(conn)
 
     # Seed default allocation targets

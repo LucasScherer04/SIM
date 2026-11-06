@@ -54,6 +54,14 @@ from .ai_radar_service import (
     update_app_settings,
     test_ai_connection,
     generate_portfolio_and_market_radar,
+    get_radar_item_states,
+    set_radar_item_state,
+    list_analysis_history,
+    get_analysis_by_id,
+    compare_saved_analyses,
+    analyze_portfolio_deep,
+    analyze_asset_deep,
+    compare_similar_assets,
 )
 
 from .whatsapp_service import (
@@ -1015,6 +1023,106 @@ def api_test_ai(payload: AiTestPayload, current_user: Dict[str, Any] = Depends(g
 @app.get("/api/ai/radar")
 def api_get_ai_radar(force: bool = Query(False), current_user: Dict[str, Any] = Depends(get_current_user)):
     return generate_portfolio_and_market_radar(force_refresh=force, user_id=current_user["id"])
+
+
+class RadarItemStatePayload(BaseModel):
+    item_key: str
+    status: str  # 'RELEVANTE' | 'ACOMPANHANDO' | 'IGNORADO' | 'NOVO'
+    ticker: str = ""
+    notes: str = ""
+
+
+class CompareAssetsPayload(BaseModel):
+    tickers: List[str]
+    period: str = "1Y"
+
+
+@app.get("/api/ai/radar/item-states")
+def api_get_radar_item_states(current_user: Dict[str, Any] = Depends(get_current_user)):
+    return {"item_states": get_radar_item_states(user_id=current_user["id"])}
+
+
+@app.post("/api/ai/radar/item-state")
+def api_set_radar_item_state(payload: RadarItemStatePayload, current_user: Dict[str, Any] = Depends(get_current_user)):
+    try:
+        res = set_radar_item_state(
+            item_key=payload.item_key,
+            status=payload.status,
+            ticker=payload.ticker,
+            notes=payload.notes,
+            user_id=current_user["id"],
+        )
+        return {"status": "ok", "item": res}
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+
+@app.post("/api/ai/analyze-portfolio")
+def api_analyze_portfolio(current_user: Dict[str, Any] = Depends(get_current_user)):
+    try:
+        return analyze_portfolio_deep(user_id=current_user["id"])
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+
+@app.post("/api/ai/analyze-asset/{ticker}")
+def api_analyze_asset(ticker: str, period: str = Query("1Y"), current_user: Dict[str, Any] = Depends(get_current_user)):
+    try:
+        return analyze_asset_deep(ticker=ticker, period=period, user_id=current_user["id"])
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+
+@app.post("/api/ai/compare-assets")
+def api_compare_assets(payload: CompareAssetsPayload, current_user: Dict[str, Any] = Depends(get_current_user)):
+    try:
+        return compare_similar_assets(tickers=payload.tickers, period=payload.period, user_id=current_user["id"])
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+
+@app.get("/api/ai/history")
+def api_list_ai_history(
+    analysis_type: str = Query(""),
+    target_key: str = Query(""),
+    limit: int = Query(20),
+    current_user: Dict[str, Any] = Depends(get_current_user),
+):
+    items = list_analysis_history(
+        user_id=current_user["id"],
+        analysis_type=analysis_type,
+        target_key=target_key,
+        limit=limit,
+    )
+    return {"count": len(items), "items": items}
+
+
+@app.get("/api/ai/history/compare")
+def api_compare_ai_history(
+    id_a: Optional[int] = Query(None),
+    id_b: Optional[int] = Query(None),
+    analysis_type: str = Query("PORTFOLIO"),
+    target_key: str = Query("CARTEIRA"),
+    current_user: Dict[str, Any] = Depends(get_current_user),
+):
+    try:
+        return compare_saved_analyses(
+            id_a=id_a,
+            id_b=id_b,
+            analysis_type=analysis_type,
+            target_key=target_key,
+            user_id=current_user["id"],
+        )
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+
+@app.get("/api/ai/history/{analysis_id}")
+def api_get_ai_history_item(analysis_id: int, current_user: Dict[str, Any] = Depends(get_current_user)):
+    rec = get_analysis_by_id(analysis_id, user_id=current_user["id"])
+    if not rec:
+        raise HTTPException(status_code=404, detail="Análise não encontrada.")
+    return rec
 
 
 class WhatsAppTestPayload(BaseModel):

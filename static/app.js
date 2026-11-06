@@ -2245,6 +2245,11 @@ async function openAssetDetail(ticker, period = "1M", keepTabHistory = false) {
   // Painéis especializados por classe (Proventos / Estrutura ETF / Wall Street USD / On-Chain Cripto + Simulador)
   renderAssetClassSpecializedPanels(data);
 
+  const structAiBox = document.getElementById("detail-structured-ai-box");
+  if (structAiBox) {
+    structAiBox.innerHTML = "";
+    structAiBox.classList.add("hidden");
+  }
   renderAiReportSection(data.reports_data);
   renderAssetNewsSection(data.news);
 }
@@ -4737,36 +4742,135 @@ function renderAiRadarView(data) {
     `).join("");
   }
 
-  const alerts = data.portfolio_alerts || [];
-  if (alertsCount) alertsCount.textContent = `${alerts.length} alertas`;
-  if (alertsEl) {
-    if (alerts.length === 0) {
-      alertsEl.innerHTML = `<div class="empty-sm">Nenhum evento de risco ou oscilação atípica na carteira no momento.</div>`;
+  STATE.lastRadarData = data;
+  STATE.radarItemFilter = STATE.radarItemFilter || "ACTIVE";
+
+  const metaRisksEl = document.getElementById("ai-radar-meta-and-risks");
+  if (metaRisksEl) {
+    const delta = data.delta_since_last || {};
+    const risks = data.risks_and_counterarguments || [];
+    const warns = data.data_warnings || [];
+    const srcs = data.sources || [];
+    const lims = data.limitations || [];
+    metaRisksEl.innerHTML = `
+      ${delta.summary ? `
+        <div class="xs" style="background:var(--surface-2);padding:8px 12px;border-radius:8px;border-left:3px solid var(--accent)">
+          <strong>O que mudou desde a última análise:</strong> <span class="muted">${esc(delta.summary)}</span>
+        </div>
+      ` : ""}
+      ${warns.length ? `
+        <div class="xs" style="background:rgba(232,176,75,0.10);border:1px solid rgba(232,176,75,0.35);padding:8px 12px;border-radius:8px">
+          <strong style="color:#e8b04b">Alertas de dados e cobertura:</strong>
+          <ul style="margin:4px 0 0 0;padding-left:16px" class="muted">${warns.map(w => `<li>${esc(w)}</li>`).join("")}</ul>
+        </div>
+      ` : ""}
+      ${risks.length ? `
+        <div class="xs" style="background:var(--bg-elev);padding:8px 12px;border-radius:8px">
+          <strong class="neg">Riscos &amp; Argumentos Contrários:</strong>
+          <ul style="margin:4px 0 0 0;padding-left:16px" class="faint">${risks.map(r => `<li>${esc(r)}</li>`).join("")}</ul>
+        </div>
+      ` : ""}
+      <div class="row between wrap gap-2 xs faint">
+        <span>Fontes rastreadas (${srcs.length}): ${srcs.slice(0, 3).map(s => esc(s.name)).join(" · ")}</span>
+        <span>Versão prompt/motor: <strong class="mono">${esc(data.prompt_version || "etapa4-v1.0")}</strong></span>
+      </div>
+      ${lims.length ? `<div class="xs faint" style="font-style:italic">${esc(lims[0])}</div>` : ""}
+    `;
+  }
+
+  const filterMode = STATE.radarItemFilter;
+  function passesRadarFilter(statusVal) {
+    const st = (statusVal || "NOVO").toUpperCase();
+    if (filterMode === "ALL") return true;
+    if (filterMode === "RELEVANTE") return st === "RELEVANTE";
+    if (filterMode === "ACOMPANHANDO") return st === "ACOMPANHANDO";
+    return st !== "IGNORADO";
+  }
+
+  function renderItemStateBar(itemKey, currentStatus, ticker) {
+    const st = (currentStatus || "NOVO").toUpperCase();
+    const btn = (val, label) => {
+      const active = st === val;
+      const cls = active ? "btn-primary" : "btn-ghost";
+      return `<button type="button" class="btn btn-sm ${cls}" style="padding:2px 8px;height:24px;font-size:11px" onclick="markRadarItemState('${esc(itemKey)}', '${val}', '${esc(ticker)}')">${label}</button>`;
+    };
+    return `
+      <div class="row gap-1 wrap" style="margin-top:6px">
+        ${btn("RELEVANTE", "★ Relevante")}
+        ${btn("ACOMPANHANDO", "👁 Acompanhar")}
+        ${btn("IGNORADO", "✕ Ignorar")}
+      </div>
+    `;
+  }
+
+  // Watchlist signals
+  const watchListEl = document.getElementById("ai-radar-watchlist-list");
+  const watchCountEl = document.getElementById("ai-radar-watchlist-count");
+  const rawWatch = data.watchlist_signals || [];
+  const filteredWatch = rawWatch.filter(w => passesRadarFilter(w.user_status));
+  if (watchCountEl) watchCountEl.textContent = `${filteredWatch.length} de ${rawWatch.length} ativos`;
+  if (watchListEl) {
+    if (filteredWatch.length === 0) {
+      watchListEl.innerHTML = `<div class="empty-sm" style="grid-column:1/-1">Nenhum ativo favorito neste filtro (marque estrelas nos ativos do Mercado para acompanhá-los aqui).</div>`;
     } else {
-      alertsEl.innerHTML = alerts.map(a => `
-        <div class="callout" style="border-color:${a.severity === 'OPORTUNIDADE_CARTEIRA' ? 'var(--accent)' : 'var(--gold)'}">
-          <div class="row between wrap gap-2" style="width:100%">
-            <div class="row gap-2">
-              <span class="badge ${a.severity === 'OPORTUNIDADE_CARTEIRA' ? 'badge-pos' : 'badge-gold'}">${esc(a.badge)}</span>
-              <strong class="strong cursor-pointer" onclick="openAssetDetail('${esc(a.ticker)}')">${esc(a.ticker)}</strong>
+      watchListEl.innerHTML = filteredWatch.map(w => `
+        <div class="card card-pad stack" style="gap:8px;padding:12px;background:var(--surface-2)">
+          <div class="row between wrap gap-2">
+            <div>
+              <strong class="strong cursor-pointer" onclick="openAssetDetail('${esc(w.ticker)}')">${esc(w.ticker)}</strong>
+              <span class="xs faint" style="margin-left:6px">${esc(w.name)}</span>
             </div>
-            <button class="btn btn-sm btn-ghost" onclick="openAssetDetail('${esc(a.ticker)}')">Ver Raio-X ${ic("arrow-right", 12)}</button>
+            <span class="xs strong mono ${w.change_pct >= 0 ? 'pos' : 'neg'}">${fmtMoney(w.last_price, w.currency)} (${fmtPct(w.change_pct)})</span>
           </div>
-          <div class="xs strong" style="margin-top:6px">${esc(a.title)}</div>
-          <div class="xs faint" style="margin-top:2px">${esc(a.detail)}</div>
+          <ul style="margin:0;padding-left:16px" class="xs faint">
+            ${(w.signals || []).map(s => `<li>${esc(s)}</li>`).join("")}
+          </ul>
+          <div class="row between wrap gap-2" style="align-items:center">
+            <span class="xs faint">Fonte: ${esc(w.quote_source || "Catálogo")} ${w.is_stale ? "· [Cotação antiga]" : ""}</span>
+            ${renderItemStateBar(w.item_key || `WATCH:${w.ticker}`, w.user_status, w.ticker)}
+          </div>
         </div>
       `).join("");
     }
   }
 
-  const opps = data.opportunities || [];
+  const rawAlerts = data.portfolio_alerts || [];
+  const alerts = rawAlerts.filter(a => passesRadarFilter(a.user_status));
+  if (alertsCount) alertsCount.textContent = `${alerts.length} alertas`;
+  if (alertsEl) {
+    if (alerts.length === 0) {
+      alertsEl.innerHTML = `<div class="empty-sm">Nenhum evento de risco ou oscilação atípica na carteira para o filtro selecionado.</div>`;
+    } else {
+      alertsEl.innerHTML = alerts.map(a => {
+        const ikey = a.item_key || `ALERT:${a.ticker}`;
+        return `
+          <div class="callout" style="border-color:${a.severity === 'OPORTUNIDADE_CARTEIRA' ? 'var(--accent)' : 'var(--gold)'}">
+            <div class="row between wrap gap-2" style="width:100%">
+              <div class="row gap-2">
+                <span class="badge ${a.severity === 'OPORTUNIDADE_CARTEIRA' ? 'badge-pos' : 'badge-gold'}">${esc(a.badge)}</span>
+                <strong class="strong cursor-pointer" onclick="openAssetDetail('${esc(a.ticker)}')">${esc(a.ticker)}</strong>
+              </div>
+              <button class="btn btn-sm btn-ghost" onclick="openAssetDetail('${esc(a.ticker)}')">Ver Raio-X ${ic("arrow-right", 12)}</button>
+            </div>
+            <div class="xs strong" style="margin-top:6px">${esc(a.title)}</div>
+            <div class="xs faint" style="margin-top:2px">${esc(a.detail)}</div>
+            ${renderItemStateBar(ikey, a.user_status, a.ticker)}
+          </div>
+        `;
+      }).join("");
+    }
+  }
+
+  const rawOpps = data.opportunities || [];
+  const opps = rawOpps.filter(o => passesRadarFilter(o.user_status));
   if (oppsGrid) {
     if (opps.length === 0) {
-      oppsGrid.innerHTML = `<div class="card empty-sm" style="grid-column:1/-1">Nenhuma assimetria atendeu aos filtros estritos no momento.</div>`;
+      oppsGrid.innerHTML = `<div class="card empty-sm" style="grid-column:1/-1">Nenhuma hipótese para investigação atendeu ao filtro selecionado.</div>`;
     } else {
       oppsGrid.innerHTML = opps.map(o => {
         const inPort = o.in_portfolio ? `<span class="badge badge-accent">Na sua carteira</span>` : "";
         const reasonsHtml = (o.reasons || []).map(r => `<li>${esc(r)}</li>`).join("");
+        const ikey = o.item_key || `OPP:${o.ticker}`;
         return `
           <div class="card card-pad stack" style="gap:12px;position:relative">
             <div class="row between wrap gap-2">
@@ -4806,9 +4910,9 @@ function renderAiRadarView(data) {
               </div>
             </div>
 
-            <!-- Motivos quantitativos -->
+            <!-- Hipóteses quantitativas para investigação -->
             <div class="xs" style="background:var(--bg-elev);padding:10px 12px;border-radius:8px">
-              <div class="xs eyebrow" style="color:var(--accent);margin-bottom:4px">Por que é oportunidade agora:</div>
+              <div class="xs eyebrow" style="color:var(--accent);margin-bottom:4px">Sinais para investigação (Cálculo SIM):</div>
               <ul style="margin:0;padding-left:16px;line-height:1.45" class="faint">${reasonsHtml}</ul>
             </div>
 
@@ -4823,12 +4927,14 @@ function renderAiRadarView(data) {
               </div>
             ` : ""}
 
+            ${renderItemStateBar(ikey, o.user_status, o.ticker)}
+
             <div class="row gap-2 between" style="margin-top:auto;padding-top:6px">
               <button class="btn btn-sm btn-ghost" onclick="openAssetDetail('${esc(o.ticker)}')">
                 <span>Raio-X Completo</span> ${ic("arrow-right", 12)}
               </button>
-              <button class="btn btn-sm btn-primary" onclick="openTransactionModal('${esc(o.ticker)}', '${esc(o.asset_class)}', '${o.last_price}')">
-                ${ic("plus", 13)}<span>Lançar Aporte</span>
+              <button class="btn btn-sm btn-secondary" onclick="openTransactionModal('${esc(o.ticker)}', '${esc(o.asset_class)}', '${o.last_price}')">
+                ${ic("plus", 13)}<span>Registrar Operação</span>
               </button>
             </div>
           </div>
@@ -4838,6 +4944,327 @@ function renderAiRadarView(data) {
   }
 
   hydrateIcons(document.getElementById("view-AI_RADAR"));
+}
+
+function setRadarItemFilter(mode) {
+  STATE.radarItemFilter = mode;
+  ["ACTIVE", "RELEVANTE", "ACOMPANHANDO", "ALL"].forEach(m => {
+    const el = document.getElementById(`radar-filter-${m}`);
+    if (el) el.classList.toggle("is-active", m === mode);
+  });
+  if (STATE.lastRadarData) {
+    renderAiRadarView(STATE.lastRadarData);
+  }
+}
+
+async function markRadarItemState(itemKey, status, ticker = "") {
+  try {
+    const res = await fetch("/api/ai/radar/item-state", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ item_key: itemKey, status, ticker }),
+    });
+    if (!res.ok) throw new Error("Falha ao atualizar status do item.");
+    if (STATE.lastRadarData) {
+      const updateList = (arr) => (arr || []).forEach(it => {
+        if ((it.item_key || "") === itemKey) it.user_status = status;
+      });
+      updateList(STATE.lastRadarData.portfolio_alerts);
+      updateList(STATE.lastRadarData.opportunities);
+      updateList(STATE.lastRadarData.watchlist_signals);
+      renderAiRadarView(STATE.lastRadarData);
+    }
+    showToast(`Item ${ticker || itemKey} marcado como ${status}.`);
+  } catch (err) {
+    showToast(err.message || "Erro ao salvar status do item.");
+  }
+}
+
+function _renderStructuredAnalysisCardHtml(data, titleLabel) {
+  const interp = data.ai_interpretation || {};
+  const delta = data.delta_since_last || {};
+  const warns = data.data_warnings || [];
+  const srcs = data.sources || [];
+  const lims = data.limitations || [];
+  const posList = interp.strengths || interp.positive_factors || interp.highlights_by_asset || [];
+  const risks = interp.risks_and_counterarguments || [];
+  const att = interp.attention_points || [];
+
+  let tableHtml = "";
+  if (Array.isArray(data.comparison_table) && data.comparison_table.length) {
+    tableHtml = `
+      <div class="table-wrap" style="margin-top:8px">
+        <table class="table">
+          <thead>
+            <tr>
+              <th>Ativo</th><th>Classe / Setor</th><th class="r">Cotação</th><th class="r">Var. Período</th>
+              <th class="r">DY 12m</th><th class="r">P/L</th><th class="r">P/VP</th><th>Fonte &amp; Data</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${data.comparison_table.map(r => `
+              <tr>
+                <td><strong class="cursor-pointer" onclick="openAssetDetail('${esc(r.ticker)}')">${esc(r.ticker)}</strong><div class="xs faint">${esc(r.name)}</div></td>
+                <td class="xs">${esc(r.asset_class)} · ${esc(r.sector || "—")}</td>
+                <td class="r mono">${fmtMoney(r.last_price, r.currency)}</td>
+                <td class="r mono ${r.period_change_pct >= 0 ? 'pos' : 'neg'}">${fmtPct(r.period_change_pct)}</td>
+                <td class="r mono">${Number(r.dy_12m || 0).toFixed(2)}%</td>
+                <td class="r mono">${r.pl > 0 ? Number(r.pl).toFixed(1) + "x" : "—"}</td>
+                <td class="r mono">${r.pvp > 0 ? Number(r.pvp).toFixed(2) + "x" : "—"}</td>
+                <td class="xs faint">${esc(r.quote_source)}<br/>${esc(r.updated_at || "catálogo")}</td>
+              </tr>
+            `).join("")}
+          </tbody>
+        </table>
+      </div>
+    `;
+  }
+
+  return `
+    <div class="stack" style="gap:12px;background:var(--surface-2);padding:14px;border-radius:12px;border:1px solid var(--border-strong)">
+      <div class="row between wrap gap-2">
+        <div>
+          <span class="badge badge-accent">${esc(titleLabel)}</span>
+          <strong style="margin-left:8px">${esc(data.target_key || "")}</strong>
+          <span class="xs faint" style="margin-left:8px">Gerado em ${esc(data.generated_at || "")} · Motor: ${esc(data.ai_provider_used || interp.provider_used || "")} (${esc(data.prompt_version || "")})</span>
+        </div>
+        ${data.analysis_id ? `<span class="xs mono faint">Registro #${data.analysis_id}</span>` : ""}
+      </div>
+
+      ${delta.summary ? `
+        <div class="xs" style="background:var(--bg-elev);padding:8px 12px;border-radius:8px;border-left:3px solid var(--accent)">
+          <strong>O que mudou desde a última análise:</strong> <span class="muted">${esc(delta.summary)}</span>
+        </div>
+      ` : ""}
+
+      ${warns.length ? `
+        <div class="xs" style="background:rgba(232,176,75,0.10);border:1px solid rgba(232,176,75,0.35);padding:8px 12px;border-radius:8px">
+          <strong style="color:#e8b04b">Alertas de dados ausentes, antigos ou em cache:</strong>
+          <ul style="margin:4px 0 0 0;padding-left:16px" class="muted">${warns.map(w => `<li>${esc(w)}</li>`).join("")}</ul>
+        </div>
+      ` : ""}
+
+      ${tableHtml}
+
+      <div class="callout" style="background:var(--bg-elev)">
+        <div class="xs eyebrow" style="color:var(--accent);margin-bottom:4px">Interpretação Analítica (${interp.ai_generated ? "LLM + Dados SIM" : "Motor Determinístico SIM"})</div>
+        <div class="xs" style="line-height:1.6">${esc(interp.summary || "")}</div>
+      </div>
+
+      <div class="grid" style="grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:10px">
+        ${posList.length ? `
+          <div class="xs" style="background:var(--bg-elev);padding:10px 12px;border-radius:8px">
+            <strong class="pos">Pontos Fortes / Destaques Observados:</strong>
+            <ul style="margin:4px 0 0 0;padding-left:16px;line-height:1.45" class="faint">${posList.map(p => `<li>${esc(p)}</li>`).join("")}</ul>
+          </div>
+        ` : ""}
+        ${risks.length ? `
+          <div class="xs" style="background:var(--bg-elev);padding:10px 12px;border-radius:8px">
+            <strong class="neg">Riscos &amp; Argumentos Contrários:</strong>
+            <ul style="margin:4px 0 0 0;padding-left:16px;line-height:1.45" class="faint">${risks.map(r => `<li>${esc(r)}</li>`).join("")}</ul>
+          </div>
+        ` : ""}
+        ${att.length ? `
+          <div class="xs" style="background:var(--bg-elev);padding:10px 12px;border-radius:8px">
+            <strong style="color:#e8b04b">O que merece sua atenção:</strong>
+            <ul style="margin:4px 0 0 0;padding-left:16px;line-height:1.45" class="faint">${att.map(a => `<li>${esc(a)}</li>`).join("")}</ul>
+          </div>
+        ` : ""}
+      </div>
+
+      <div class="xs faint">
+        <strong>Fontes utilizadas (${srcs.length}):</strong>
+        ${srcs.map(s => s.url ? `<a href="${sanitizeUrl(s.url)}" target="_blank" rel="noopener" class="link" style="margin-right:8px;text-decoration:underline">${esc(s.name)}</a>` : `<span style="margin-right:8px">${esc(s.name)}${s.updated_at ? ` (${esc(s.updated_at)})` : ""}</span>`).join(" · ")}
+      </div>
+      ${lims.length ? `<div class="xs faint" style="font-style:italic">${esc(lims.join(" "))}</div>` : ""}
+    </div>
+  `;
+}
+
+async function runPortfolioDeepAnalysis() {
+  const outEl = document.getElementById("ai-analyst-deep-output");
+  const btn = document.getElementById("btn-analyze-portfolio-deep");
+  if (!outEl) return;
+  outEl.classList.remove("hidden");
+  outEl.innerHTML = `<div class="xs faint">Executando análise consolidada da carteira…</div>`;
+  if (btn) btn.disabled = true;
+  try {
+    const res = await fetch("/api/ai/analyze-portfolio", { method: "POST" });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.detail || "Erro ao analisar carteira.");
+    outEl.innerHTML = _renderStructuredAnalysisCardHtml(data, "Análise Consolidada da Carteira");
+  } catch (err) {
+    outEl.innerHTML = `<div class="xs neg">${esc(err.message || "Falha ao analisar carteira.")}</div>`;
+  } finally {
+    if (btn) btn.disabled = false;
+  }
+}
+
+async function runCompareSimilarAssetsFromInput() {
+  const inp = document.getElementById("ai-compare-tickers-input");
+  const outEl = document.getElementById("ai-analyst-deep-output");
+  if (!outEl) return;
+  const raw = (inp ? inp.value : "").trim();
+  const tickers = raw.split(/[\s,;]+/).map(s => s.trim().toUpperCase()).filter(Boolean);
+  if (tickers.length === 0) {
+    showToast("Informe ao menos 1 código de ativo (ex: PETR4, VALE3).");
+    return;
+  }
+  outEl.classList.remove("hidden");
+  outEl.innerHTML = `<div class="xs faint">Comparando ativos (${esc(tickers.join(", "))})…</div>`;
+  try {
+    const res = await fetch("/api/ai/compare-assets", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ tickers, period: "1Y" }),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.detail || "Erro ao comparar ativos.");
+    outEl.innerHTML = _renderStructuredAnalysisCardHtml(data, "Comparação de Ativos Semelhantes");
+  } catch (err) {
+    outEl.innerHTML = `<div class="xs neg">${esc(err.message || "Falha na comparação de ativos.")}</div>`;
+  }
+}
+
+async function runCompareHistoryAnalysis(analysisType = "PORTFOLIO", targetKey = "CARTEIRA", idA = null, idB = null) {
+  const outEl = document.getElementById("ai-analyst-deep-output");
+  if (!outEl) return;
+  outEl.classList.remove("hidden");
+  outEl.innerHTML = `<div class="xs faint">Comparando histórico de análises…</div>`;
+  try {
+    const qs = new URLSearchParams({ analysis_type: analysisType, target_key: targetKey });
+    if (idA) qs.set("id_a", String(idA));
+    if (idB) qs.set("id_b", String(idB));
+    const res = await fetch(`/api/ai/history/compare?${qs.toString()}`);
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.detail || "Erro ao comparar análises.");
+    if (!data.available) {
+      outEl.innerHTML = `
+        <div class="callout">
+          <div class="xs strong">${esc(data.reason || "Ainda não há duas análises salvas para comparar.")}</div>
+          <div class="xs faint" style="margin-top:4px">Clique em "Analisar Minha Carteira" novamente quando quiser registrar uma nova fotografia e comparar a evolução.</div>
+        </div>
+      `;
+      return;
+    }
+    const chgs = (data.delta && data.delta.changes) || [];
+    outEl.innerHTML = `
+      <div class="stack" style="gap:10px;background:var(--surface-2);padding:14px;border-radius:12px;border:1px solid var(--border-strong)">
+        <div class="row between wrap gap-2">
+          <span class="badge badge-accent">Comparação entre Análises (${esc(data.target_key)})</span>
+          <span class="xs mono faint">#${data.older.id} (${esc(data.older.created_at)}) → #${data.newer.id} (${esc(data.newer.created_at)})</span>
+        </div>
+        <div class="xs strong">${esc(data.delta.summary || "")}</div>
+        ${chgs.length ? `<ul style="margin:0;padding-left:16px" class="xs muted">${chgs.map(c => `<li>${esc(c)}</li>`).join("")}</ul>` : ""}
+        <div class="grid" style="grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:10px">
+          <div class="xs" style="background:var(--bg-elev);padding:10px;border-radius:8px">
+            <strong>Análise Anterior (#${data.older.id} · ${esc(data.older.created_at)}):</strong>
+            <p class="faint" style="margin-top:4px">${esc(data.older.result.summary || data.older.result.executive_briefing || "—")}</p>
+          </div>
+          <div class="xs" style="background:var(--bg-elev);padding:10px;border-radius:8px">
+            <strong>Análise Mais Recente (#${data.newer.id} · ${esc(data.newer.created_at)}):</strong>
+            <p class="faint" style="margin-top:4px">${esc(data.newer.result.summary || data.newer.result.executive_briefing || "—")}</p>
+          </div>
+        </div>
+      </div>
+    `;
+  } catch (err) {
+    outEl.innerHTML = `<div class="xs neg">${esc(err.message || "Falha ao comparar histórico.")}</div>`;
+  }
+}
+
+async function loadAiHistoryList() {
+  const outEl = document.getElementById("ai-analyst-deep-output");
+  if (!outEl) return;
+  outEl.classList.remove("hidden");
+  outEl.innerHTML = `<div class="xs faint">Carregando histórico de análises salvas…</div>`;
+  try {
+    const res = await fetch("/api/ai/history?limit=15");
+    const data = await res.json();
+    const items = data.items || [];
+    if (items.length === 0) {
+      outEl.innerHTML = `<div class="empty-sm">Nenhuma análise registrada ainda no histórico.</div>`;
+      return;
+    }
+    outEl.innerHTML = `
+      <div class="stack" style="gap:8px;background:var(--surface-2);padding:12px;border-radius:12px">
+        <div class="eyebrow">Últimas análises salvas (${items.length})</div>
+        <div class="table-wrap">
+          <table class="table">
+            <thead>
+              <tr>
+                <th>#</th><th>Data/Hora</th><th>Tipo</th><th>Escopo</th><th>Motor / Modelo</th><th>Versão</th><th>Fontes</th><th></th>
+              </tr>
+            </thead>
+            <tbody>
+              ${items.map(it => `
+                <tr>
+                  <td class="mono xs">#${it.id}</td>
+                  <td class="mono xs">${esc(it.created_at)}</td>
+                  <td><span class="badge badge-outline">${esc(it.analysis_type)}</span></td>
+                  <td class="strong">${esc(it.target_key)}</td>
+                  <td class="xs faint">${esc(it.provider)} · ${esc(it.model)}</td>
+                  <td class="xs mono faint">${esc(it.prompt_version)}</td>
+                  <td class="xs faint">${(it.sources || []).length} fonte(s)</td>
+                  <td class="r">
+                    <button class="btn btn-sm btn-ghost" onclick="runCompareHistoryAnalysis('${esc(it.analysis_type)}', '${esc(it.target_key)}')">Comparar evolução</button>
+                  </td>
+                </tr>
+              `).join("")}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    `;
+  } catch (err) {
+    outEl.innerHTML = `<div class="xs neg">${esc(err.message || "Erro ao listar histórico.")}</div>`;
+  }
+}
+
+async function runAssetDeepAnalysis() {
+  if (!STATE.activeAssetTicker) return;
+  const box = document.getElementById("detail-structured-ai-box");
+  const btn = document.getElementById("btn-deep-analyze-asset");
+  if (!box) return;
+  box.classList.remove("hidden");
+  box.innerHTML = `<div class="xs faint">Analisando ${esc(STATE.activeAssetTicker)} (fatos observados, cálculos SIM, notícias e riscos)…</div>`;
+  if (btn) btn.disabled = true;
+  try {
+    const res = await fetch(`/api/ai/analyze-asset/${encodeURIComponent(STATE.activeAssetTicker)}?period=${encodeURIComponent(STATE.activeAssetPeriod || "1Y")}`, {
+      method: "POST",
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.detail || "Erro ao analisar ativo.");
+    box.innerHTML = _renderStructuredAnalysisCardHtml(data, `Análise Rastreável · ${STATE.activeAssetTicker}`);
+  } catch (err) {
+    box.innerHTML = `<div class="xs neg">${esc(err.message || "Falha ao analisar ativo.")}</div>`;
+  } finally {
+    if (btn) btn.disabled = false;
+  }
+}
+
+async function runAssetPeersComparison() {
+  if (!STATE.activeAssetTicker) return;
+  const box = document.getElementById("detail-structured-ai-box");
+  const btn = document.getElementById("btn-compare-peers-asset");
+  if (!box) return;
+  box.classList.remove("hidden");
+  box.innerHTML = `<div class="xs faint">Comparando ${esc(STATE.activeAssetTicker)} com pares da mesma classe/setor…</div>`;
+  if (btn) btn.disabled = true;
+  try {
+    const res = await fetch("/api/ai/compare-assets", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ tickers: [STATE.activeAssetTicker], period: STATE.activeAssetPeriod || "1Y" }),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.detail || "Erro ao comparar pares.");
+    box.innerHTML = _renderStructuredAnalysisCardHtml(data, `Comparação com Pares · ${STATE.activeAssetTicker}`);
+  } catch (err) {
+    box.innerHTML = `<div class="xs neg">${esc(err.message || "Falha ao comparar pares.")}</div>`;
+  } finally {
+    if (btn) btn.disabled = false;
+  }
 }
 
 /* ---------- Modal de Configurações de IA & WhatsApp ---------- */

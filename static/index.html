@@ -457,13 +457,22 @@
         <div class="card card-pad stack" style="gap:20px">
           <div class="card-head" style="margin-bottom:0">
             <div>
-              <div class="card-title"><span data-icon="sparkles"></span>Leitura inteligente de relatórios & Valuation</div>
+              <div class="card-title"><span data-icon="sparkles"></span>Leitura inteligente de relatórios &amp; Valuation</div>
               <div class="card-sub">Auditoria CVM/B3, diagnóstico estrutural nos 5 pilares, Bazin, Graham e conclusão executiva da IA</div>
             </div>
-            <button onclick="reanalyzeAssetReport()" id="btn-reanalyze-ai" class="btn btn-sm btn-secondary">
-              <span data-icon="sparkles" data-size="14"></span><span>Reinterpretar</span>
-            </button>
+            <div class="row gap-2 wrap">
+              <button onclick="runAssetDeepAnalysis()" id="btn-deep-analyze-asset" class="btn btn-sm btn-primary">
+                <span data-icon="sparkles" data-size="14"></span><span>Analisar Ativo (Fatos &amp; Riscos)</span>
+              </button>
+              <button onclick="runAssetPeersComparison()" id="btn-compare-peers-asset" class="btn btn-sm btn-secondary">
+                <span data-icon="layers" data-size="14"></span><span>Comparar Pares</span>
+              </button>
+              <button onclick="reanalyzeAssetReport()" id="btn-reanalyze-ai" class="btn btn-sm btn-ghost">
+                <span data-icon="refresh" data-size="14"></span><span>Reinterpretar PDF</span>
+              </button>
+            </div>
           </div>
+          <div id="detail-structured-ai-box" class="hidden"></div>
           <div id="detail-ai-report-box"></div>
           <div class="doc-history-block">
             <div class="eyebrow" style="margin-bottom:6px">Documentos oficiais em sequência (7 PDFs mais recentes)</div>
@@ -560,9 +569,66 @@
           </div>
 
           <div>
-            <div class="eyebrow" style="margin-bottom:8px">Recomendações Táticas do Analista para Hoje</div>
+            <div class="eyebrow" style="margin-bottom:8px">Pontos de Atenção &amp; Hipóteses para Investigação</div>
             <div id="ai-radar-actions-list" class="stack" style="gap:8px"></div>
           </div>
+
+          <div id="ai-radar-meta-and-risks" class="stack" style="gap:10px"></div>
+        </div>
+
+        <!-- Central do Analista de IA (Ações Sob Demanda + Comparador + Histórico Rastreável) -->
+        <div class="card card-pad stack" style="gap:14px">
+          <div class="card-head" style="margin-bottom:0">
+            <div>
+              <div class="card-title"><span data-icon="compass"></span>Analista de IA · Ações Rastreáveis &amp; Histórico</div>
+              <div class="card-sub">Separação explícita entre Fato Observado, Cálculo do SIM e Interpretação da IA, com fontes, riscos e comparação histórica</div>
+            </div>
+            <div class="row gap-2 wrap">
+              <button class="btn btn-sm btn-primary" onclick="runPortfolioDeepAnalysis()" id="btn-analyze-portfolio-deep">
+                <span data-icon="sparkles" data-size="14"></span><span>Analisar Minha Carteira</span>
+              </button>
+              <button class="btn btn-sm btn-secondary" onclick="runCompareHistoryAnalysis('PORTFOLIO', 'CARTEIRA')">
+                <span data-icon="refresh" data-size="14"></span><span>O que mudou desde a última análise?</span>
+              </button>
+              <button class="btn btn-sm btn-ghost" onclick="loadAiHistoryList()">
+                <span data-icon="layers" data-size="14"></span><span>Histórico de Análises</span>
+              </button>
+            </div>
+          </div>
+
+          <div class="row gap-2 wrap" style="align-items:center;background:var(--surface-2);padding:10px 12px;border-radius:10px">
+            <span class="xs strong">Comparar ativos semelhantes:</span>
+            <input type="text" id="ai-compare-tickers-input" class="input input-uc" placeholder="Ex: PETR4, VALE3, ITUB4 ou HGLG11" style="max-width:280px;height:34px;font-size:12.5px" />
+            <button class="btn btn-sm btn-secondary" onclick="runCompareSimilarAssetsFromInput()" id="btn-compare-assets-go">
+              <span>Comparar Métricas</span>
+            </button>
+            <span class="xs faint">Informe de 1 a 4 códigos (se informar 1, o SIM busca pares do mesmo setor/classe).</span>
+          </div>
+
+          <div id="ai-analyst-deep-output" class="hidden"></div>
+        </div>
+
+        <!-- Filtro de status dos itens do Radar -->
+        <div class="row between wrap gap-2" style="align-items:center">
+          <div class="xs faint">Marque alertas e hipóteses como <strong>Relevante</strong>, <strong>Em acompanhamento</strong> ou <strong>Ignorado</strong>. O radar não emite ordens nem garante retorno.</div>
+          <div class="seg">
+            <button type="button" class="seg-btn is-active" id="radar-filter-ACTIVE" onclick="setRadarItemFilter('ACTIVE')">Ativos (ocultar ignorados)</button>
+            <button type="button" class="seg-btn" id="radar-filter-RELEVANTE" onclick="setRadarItemFilter('RELEVANTE')">Relevantes</button>
+            <button type="button" class="seg-btn" id="radar-filter-ACOMPANHANDO" onclick="setRadarItemFilter('ACOMPANHANDO')">Acompanhando</button>
+            <button type="button" class="seg-btn" id="radar-filter-ALL" onclick="setRadarItemFilter('ALL')">Todos</button>
+          </div>
+        </div>
+
+        <!-- Sinais da Lista de Acompanhamento (Watchlist / Favoritos) -->
+        <div class="card card-pad stack" style="gap:14px">
+          <div class="card-head" style="margin-bottom:0">
+            <div>
+              <div class="card-title"><span data-icon="star"></span>Ativos em Acompanhamento (Watchlist)</div>
+              <div class="card-sub">Sinais para investigação nos ativos marcados como favoritos</div>
+            </div>
+            <span id="ai-radar-watchlist-count" class="badge">0 ativos</span>
+          </div>
+          <div id="ai-radar-watchlist-list" class="grid grid-cards" style="grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:10px"></div>
         </div>
 
         <!-- Alertas específicos da carteira (Ativos em custódia) -->

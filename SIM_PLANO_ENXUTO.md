@@ -412,13 +412,17 @@ Limitações registradas com transparência: (a) cotações e históricos públi
 
 ### Etapa 4 --- IA e radar
 
--   [ ] API configurável e chave protegida
--   [ ] Análise individual de ativo
--   [ ] Análise consolidada da carteira
--   [ ] Radar de notícias/oportunidades
--   [ ] Fontes e data exibidas
--   [ ] Riscos e limitações apresentados
--   [ ] Histórico de análises
+-   [x] API configurável e chave protegida (`app/ai_radar_service.py`: criptografia em repouso via `encrypt_secret`, mascaramento em `/api/settings`, suporte a variáveis de ambiente `GEMINI_API_KEY`/`OPENAI_API_KEY`/`GROQ_API_KEY` e sanitização `_sanitize_error_message` contra vazamento acidental em erros)
+-   [x] Análise individual de ativo (`analyze_asset_deep` / `POST /api/ai/analyze-asset/{ticker}`: separação entre `FATO_OBSERVADO`, `CALCULO_SIM` e `INTERPRETACAO_IA`, fatores positivos, riscos e argumentos contrários, contexto de Selic/CDI/IPCA/câmbio e avisos sobre média histórica)
+-   [x] Análise consolidada da carteira (`analyze_portfolio_deep` / `POST /api/ai/analyze-portfolio`: diversificação, concentração HHI, pontos fortes, riscos/argumentos contrários e 'O que merece minha atenção?')
+-   [x] Radar de notícias/oportunidades (`generate_portfolio_and_market_radar` + `compare_similar_assets`: hipóteses para investigação na carteira e watchlist, comparador de ativos semelhantes com seleção automática de pares e marcação de itens como `RELEVANTE`, `ACOMPANHANDO` ou `IGNORADO` em `radar_item_states`)
+-   [x] Fontes e data exibidas (`sources`, `generated_at` e `prompt_version` em todas as análises e no radar, com links diretos para notícias e relatórios CVM/B3)
+-   [x] Riscos e limitações apresentados (`risks_and_counterarguments`, `data_warnings` para dados ausentes/antigos/em cache/câmbio estimado e `limitations` explícitas sem emissão de ordens)
+-   [x] Histórico de análises (`ai_analysis_history` + `/api/ai/history` + `/api/ai/history/compare` + `delta_since_last` respondendo objetivamente 'O que mudou desde a última análise?')
+
+**Etapa 4 — concluída em 06/11/2026.**
+Arquivos criados/alterados: `app/database.py` (`migrate_ai_stage4_tables` criando `ai_analysis_history` e `radar_item_states`), `app/ai_radar_service.py` (`_sanitize_error_message`, `get_radar_item_states`, `set_radar_item_state`, `save_analysis_record`, `list_analysis_history`, `get_analysis_by_id`, `_compute_facts_delta`, `compare_saved_analyses`, `analyze_portfolio_deep`, `analyze_asset_deep`, `compare_similar_assets` e enriquecimento de `generate_portfolio_and_market_radar`), `app/main.py` (rotas `/api/ai/analyze-portfolio`, `/api/ai/analyze-asset/{ticker}`, `/api/ai/compare-assets`, `/api/ai/history`, `/api/ai/history/compare`, `/api/ai/history/{id}`, `/api/ai/radar/item-states` e `/api/ai/radar/item-state`), `static/index.html` e `static/app.js` (painel do Analista de IA com ações sob demanda, comparador de pares, histórico e evolução entre análises, filtro e marcação de itens do radar/watchlist, e botões de análise/comparação no detalhe do ativo), `tests/test_ai_stage4.py` (6 novos testes cobrindo segurança da chave, análise de ativo, análise de carteira, comparador de pares, estados do radar/watchlist e comparação histórica).
+Limitações registradas com transparência: (a) quando nenhuma chave de API externa está configurada ou quando o provedor falha, o SIM utiliza seu Motor Analítico Quantitativo determinístico e sinaliza isso claramente em `data_warnings` e `ai_provider_used`; (b) comparações entre ativos de classes ou moedas distintas emitem alerta metodológico explícito.
 
 ### Etapa 5 --- Uso diário
 
