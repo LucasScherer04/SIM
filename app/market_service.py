@@ -8,7 +8,18 @@ from datetime import datetime, timedelta, date
 from typing import Optional, Dict, List, Any
 import requests
 import yfinance as yf
-from .database import get_conn
+from .database import get_conn, migrate_market_cache_tables
+from .market_adapters import (
+    AwesomeBcbMacroAdapter,
+    YahooFinanceAdapter,
+    compute_benchmark_comparison,
+    compute_historical_stats,
+    market_of,
+    provider_label_for,
+)
+
+HISTORY_ADAPTER = YahooFinanceAdapter()
+MACRO_ADAPTER = AwesomeBcbMacroAdapter()
 
 # Silencia mensagens de erro repetitivas de cotações descontinuadas
 logging.getLogger("yfinance").setLevel(logging.CRITICAL)
@@ -56,39 +67,8 @@ def fetch_macro_indicators(force=False):
     if not force and MACRO_CACHE.get("_ts", 0) and (now - MACRO_CACHE["_ts"] < 60):
         return MACRO_CACHE
 
-    # 1. AwesomeAPI for USD/BRL, EUR/BRL, BTC/USD
-    try:
-        r = requests.get("https://economia.awesomeapi.com.br/last/USD-BRL,EUR-BRL,BTC-USD", timeout=4)
-        if r.status_code == 200:
-            data = r.json()
-            if "USDBRL" in data:
-                MACRO_CACHE["usd_brl"] = round(float(data["USDBRL"]["bid"]), 4)
-                MACRO_CACHE["usd_change"] = round(float(data["USDBRL"].get("pctChange", 0.0)), 2)
-                # Data/hora da última atualização real do câmbio (usada para transparência no dashboard)
-                MACRO_CACHE["usd_brl_updated_at"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-            if "EURBRL" in data:
-                MACRO_CACHE["eur_brl"] = round(float(data["EURBRL"]["bid"]), 4)
-                MACRO_CACHE["eur_change"] = round(float(data["EURBRL"].get("pctChange", 0.0)), 2)
-            if "BTCUSD" in data:
-                MACRO_CACHE["btc_usd"] = round(float(data["BTCUSD"]["bid"]), 2)
-                MACRO_CACHE["btc_change"] = round(float(data["BTCUSD"].get("pctChange", 0.0)), 2)
-    except Exception:
-        pass
-
-    # 2. Banco Central do Brasil (SGS) for Selic Meta (432) and CDI Anualizado (4389)
-    try:
-        r_selic = requests.get(
-            "https://api.bcb.gov.br/dados/serie/bcdata.sgs.432/dados/ultimos/1?formato=json",
-            timeout=4,
-            headers={"User-Agent": "SIM-App/1.0"},
-        )
-        if r_selic.status_code == 200:
-            arr = r_selic.json()
-            if arr and "valor" in arr[0]:
-                MACRO_CACHE["selic"] = round(float(arr[0]["valor"]), 2)
-                MACRO_CACHE["cdi"] = round(MACRO_CACHE["selic"] - 0.10, 2)
-    except Exception:
-        pass
+    # 1 & 2. Câmbio (AwesomeAPI + fallback BCB PTAX) e Juros/Inflação (BCB SGS: Selic, CDI, IPCA 12m) com cache SQLite
+    MACRO_ADAPTER.refresh_macro(MACRO_CACHE)
 
     # 3. Binance ticker for BTC, ETH, SOL
     try:
@@ -97,6 +77,7 @@ def fetch_macro_indicators(force=False):
             timeout=4,
         )
         if r_bin.status_code == 200:
+            migrate_market_cache_tables()
             conn = get_conn()
             cur = conn.cursor()
             now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -108,11 +89,18 @@ def fetch_macro_indicators(force=False):
                 if sym == "BTC":
                     MACRO_CACHE["btc_usd"] = price
                     MACRO_CACHE["btc_change"] = chg
+                    MACRO_ADAPTER.save_indicator("btc_usd", price, chg, "Binance API (24h)", now_str, conn=conn)
+                    if "sources" in MACRO_CACHE:
+                        MACRO_CACHE["sources"]["btc_usd"] = {
+                            "source": "Binance API (24h)",
+                            "updated_at": now_str,
+                            "data_state": "LIVE",
+                        }
                 cur.execute("""
                     UPDATE assets_catalog
-                    SET last_price = ?, change_pct = ?, volume_day = ?, updated_at = ?
+                    SET last_price = ?, change_pct = ?, volume_day = ?, quote_source = ?, updated_at = ?
                     WHERE ticker = ?
-                """, (price, chg, vol, now_str, sym))
+                """, (price, chg, vol, "Binance API (24h)", now_str, sym))
             conn.commit()
             conn.close()
     except Exception:
@@ -150,6 +138,7 @@ def sync_yfinance_quotes_background():
             symbols_str = " ".join(list(yf_map.keys()) + ["^BVSP", "^GSPC"])
             data = yf.download(symbols_str, period="5d", interval="1d", progress=False, group_by="ticker", threads=True)
 
+            migrate_market_cache_tables()
             conn = get_conn()
             cur = conn.cursor()
             now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -165,12 +154,14 @@ def sync_yfinance_quotes_background():
                             prev_p = float(closes.iloc[-2]) if len(closes) >= 2 else last_p
                             chg = ((last_p - prev_p) / prev_p * 100.0) if prev_p > 0 else 0.0
                             vol_val = float(vols.iloc[-1]) * last_p if len(vols) >= 1 else 0.0
+                            src_lbl = "Yahoo Finance (B3 .SA)" if yf_sym.endswith(".SA") else "Yahoo Finance (NYSE/NASDAQ)"
                             if last_p > 0:
                                 cur.execute("""
                                     UPDATE assets_catalog
-                                    SET last_price = ?, change_pct = ?, volume_day = CASE WHEN ? > 0 THEN ? ELSE volume_day END, updated_at = ?
+                                    SET last_price = ?, change_pct = ?, volume_day = CASE WHEN ? > 0 THEN ? ELSE volume_day END,
+                                        quote_source = ?, updated_at = ?
                                     WHERE ticker = ?
-                                """, (round(last_p, 2), round(chg, 2), vol_val, round(vol_val, 0), now_str, orig_ticker))
+                                """, (round(last_p, 2), round(chg, 2), vol_val, round(vol_val, 0), src_lbl, now_str, orig_ticker))
                 except Exception:
                     continue
 
@@ -180,10 +171,12 @@ def sync_yfinance_quotes_background():
                     if idx_sym in data:
                         closes = data[idx_sym]["Close"].dropna()
                         if len(closes) >= 1:
-                            lp = float(closes.iloc[-1])
+                            lp = round(float(closes.iloc[-1]), 2)
                             pp = float(closes.iloc[-2]) if len(closes) >= 2 else lp
-                            MACRO_CACHE[key_p] = round(lp, 2)
-                            MACRO_CACHE[key_c] = round(((lp - pp) / pp * 100.0) if pp > 0 else 0.0, 2)
+                            chg_idx = round(((lp - pp) / pp * 100.0) if pp > 0 else 0.0, 2)
+                            MACRO_CACHE[key_p] = lp
+                            MACRO_CACHE[key_c] = chg_idx
+                            MACRO_ADAPTER.save_indicator(key_p, lp, chg_idx, f"Yahoo Finance ({idx_sym})", now_str, conn=conn)
                 except Exception:
                     pass
 
@@ -234,63 +227,31 @@ def get_asset_chart_and_dividends(ticker: str, period_key: str = "1M", user_id: 
             if user_qty == 0:
                 user_pm = 0.0
 
-    cache_key = f"{ticker}_{period_key}"
-    now = time.time()
-    points = []
+    cls = asset["asset_class"]
+    p_up = (period_key or "1M").upper()
+    currency = (asset.get("currency") or "BRL").upper()
 
-    if cache_key in CHART_CACHE and (now - CHART_CACHE[cache_key]["ts"] < 180):
-        points = CHART_CACHE[cache_key]["points"]
-    else:
-        # Try fetching real series from Yahoo Finance or Binance
-        cls = asset["asset_class"]
-        yf_sym = f"{ticker}.SA" if cls in ("ACAO_BR", "FII", "ETF_BR") else (f"{ticker}-USD" if cls == "CRIPTO" else ticker)
-        period_map = {
-            "1D": ("1d", "5m"),
-            "5D": ("5d", "30m"),
-            "1M": ("1mo", "1d"),
-            "6M": ("6mo", "1d"),
-            "1Y": ("1y", "1d"),
-            "5Y": ("5y", "1wk"),
-            "10Y": ("10y", "1mo"),
-            "MAX": ("max", "1mo"),
-        }
-        p_up = period_key.upper()
-        yf_period, yf_interval = period_map.get(p_up, ("1mo", "1d"))
-
-        try:
-            tk = yf.Ticker(yf_sym)
-            hist = tk.history(period=yf_period, interval=yf_interval)
-            if hist is not None and not hist.empty and len(hist) >= 3:
-                for idx, row in hist.iterrows():
-                    val = float(row["Close"])
-                    if math.isnan(val):
-                        continue
-                    if p_up in ("1D", "5D"):
-                        dt_label = idx.strftime("%d/%m %H:%M")
-                    elif p_up in ("5Y", "10Y", "MAX"):
-                        dt_label = idx.strftime("%m/%Y")
-                    else:
-                        dt_label = idx.strftime("%d/%m/%Y")
-                    points.append({
-                        "label": dt_label,
-                        "iso": idx.strftime("%Y-%m-%dT%H:%M:%S"),
-                        "price": round(val, 2),
-                        "volume": int(row.get("Volume", 0) or 0),
-                    })
-        except Exception:
-            pass
-
-        # Fallback generator if market is closed / offline / rate-limited so chart is always rich & interactive
-        if len(points) < 4:
-            points = _generate_realistic_series(asset["last_price"], asset["change_pct"], ticker, p_up)
-
-        CHART_CACHE[cache_key] = {"ts": now, "points": points}
+    # Busca histórico real com cache persistente em SQLite (market_history_cache); nunca inventa série sintética
+    hist_res = HISTORY_ADAPTER.get_history(
+        ticker=ticker,
+        asset_class=cls,
+        period_key=p_up,
+        currency=currency,
+        ttl_seconds=180,
+        allow_network=True,
+    )
+    points = hist_res["points"]
 
     # Build 12-month dividend per share history
     div_history = _get_dividend_history_per_share(asset)
     class_profile = get_asset_specialized_profile(asset)
-    asset["is_stale"] = is_quote_stale(asset.get("updated_at"))
+    stale_quote = is_quote_stale(asset.get("updated_at"))
+    asset["is_stale"] = stale_quote
     asset["class_profile"] = class_profile
+    q_source = asset.get("quote_source") or (
+        provider_label_for(cls, ticker) if asset.get("updated_at") else "Catálogo local"
+    )
+    asset["quote_source"] = q_source
 
     first_price = points[0]["price"] if points else asset["last_price"]
     last_price = points[-1]["price"] if points else asset["last_price"]
@@ -301,10 +262,46 @@ def get_asset_chart_and_dividends(ticker: str, period_key: str = "1M", user_id: 
     if asset["last_price"] > 0 and asset["last_dividend_per_share"] > 0:
         monthly_yield_pct = round((asset["last_dividend_per_share"] / asset["last_price"]) * 100.0, 2)
 
+    historical_stats = compute_historical_stats(points, asset["last_price"], currency=currency)
+    benchmark_comparison = compute_benchmark_comparison(
+        HISTORY_ADAPTER,
+        points,
+        cls,
+        p_up,
+        allow_network=(hist_res["data_state"] == "LIVE"),
+    )
+
+    quote_meta = {
+        "kind": "DADO_OBSERVADO",
+        "ticker": ticker,
+        "market": market_of(cls),
+        "currency": currency,
+        "price": round(float(asset["last_price"]), 2),
+        "source": q_source,
+        "updated_at": asset.get("updated_at") or "",
+        "is_stale": stale_quote,
+        "data_state": "LIVE" if (asset.get("updated_at") and not stale_quote) else ("CACHED" if asset.get("updated_at") else "CATALOG"),
+    }
+    history_meta = {
+        "kind": "DADO_OBSERVADO",
+        "period": p_up,
+        "source": hist_res["source"],
+        "currency": hist_res["currency"],
+        "updated_at": hist_res["updated_at"],
+        "data_state": hist_res["data_state"],
+        "points_count": len(points),
+        "is_synthetic": False,
+        "warning": hist_res["warning"],
+    }
+
     return {
         "asset": asset,
+        "quote_meta": quote_meta,
+        "history_meta": history_meta,
+        "historical_stats": historical_stats,
+        "benchmark_comparison": benchmark_comparison,
         "class_profile": class_profile,
-        "period": period_key.upper(),
+        "period": p_up,
         "points": points,
         "period_change_abs": period_change_abs,
         "period_change_pct": period_change_pct,
@@ -322,8 +319,8 @@ def get_asset_chart_and_dividends(ticker: str, period_key: str = "1M", user_id: 
         },
         "dividend_info": {
             "last_dividend_per_share": asset["last_dividend_per_share"],
-            "last_ex_date": asset["last_div_ex_date"] or "30/09/2026",
-            "last_pay_date": asset["last_div_pay_date"] or "15/10/2026",
+            "last_ex_date": asset["last_div_ex_date"] or "—",
+            "last_pay_date": asset["last_div_pay_date"] or "—",
             "monthly_yield_pct": monthly_yield_pct,
             "dy_12m": asset["dy_12m"],
             "history_12m": div_history,
@@ -837,19 +834,22 @@ def lookup_ticker_live(ticker: str, default_class: str = "ACAO_BR"):
     except Exception:
         pass
 
+    now_str = ""
+    src_lbl = provider_label_for(cls, ticker)
     if last_price > 0:
+        migrate_market_cache_tables()
         conn = get_conn()
         now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         conn.execute("""
             INSERT OR REPLACE INTO assets_catalog (
                 ticker, name, asset_class, currency, sector, cnpj,
                 last_price, change_pct, volume_day, dy_12m, pl, pvp,
-                last_dividend_per_share, last_div_ex_date, last_div_pay_date, updated_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                last_dividend_per_share, last_div_ex_date, last_div_pay_date, quote_source, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """, (
             ticker, name, cls, currency, sector, "",
             last_price, change_pct, volume_day, dy_12m, pl, pvp,
-            last_div, last_ex_date, "", now_str
+            last_div, last_ex_date, "", src_lbl, now_str
         ))
         conn.commit()
         conn.close()
@@ -867,6 +867,7 @@ def lookup_ticker_live(ticker: str, default_class: str = "ACAO_BR"):
         "pl": pl,
         "dy_12m": dy_12m,
         "last_dividend_per_share": last_div,
+        "quote_source": src_lbl if last_price > 0 else "Não encontrado",
         "is_stale": is_quote_stale(now_str),
         "updated_at": now_str,
     }

@@ -16,7 +16,10 @@ import feedparser
 import pymupdf
 
 from .database import get_conn
+from .market_adapters import GoogleNewsRssAdapter
 from .market_service import get_asset_specialized_profile
+
+NEWS_ADAPTER = GoogleNewsRssAdapter()
 
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
@@ -163,7 +166,7 @@ def _parse_any_datetime(raw_val: str, struct_time_val=None):
     return None
 
 
-def fetch_asset_news(ticker: str):
+def fetch_asset_news(ticker: str, ttl_seconds: int = 900, allow_network: bool = True):
     ticker = ticker.upper().strip()
     conn = get_conn()
     row = conn.execute("SELECT * FROM assets_catalog WHERE ticker = ?", (ticker,)).fetchone()
@@ -172,95 +175,15 @@ def fetch_asset_news(ticker: str):
     name = row["name"] if row else ticker
     cls = row["asset_class"] if row else "ACAO_BR"
 
-    if cls in ("ACAO_BR", "FII", "ETF_BR"):
-        query = f"{ticker} OR \"{name}\" bolsa B3 when:90d"
-    else:
-        query = f"{ticker} \"{name}\" stock market when:90d"
-
-    encoded_q = urllib.parse.quote(query)
-    rss_url = f"https://news.google.com/rss/search?q={encoded_q}&hl=pt-BR&gl=BR&ceid=BR:pt-419"
-
-    now_dt = datetime.now()
-    cutoff_dt = now_dt - timedelta(days=90)
-    parsed_entries = []
-
-    try:
-        resp = requests.get(rss_url, timeout=5, headers={"User-Agent": "Mozilla/5.0 SIM-Finance/1.1"})
-        if resp.status_code == 200:
-            feed = feedparser.parse(resp.content)
-            for entry in feed.entries:
-                raw_title = entry.get("title", "")
-                source = "Google News Finance"
-                if " - " in raw_title:
-                    parts = raw_title.rsplit(" - ", 1)
-                    raw_title, source = parts[0].strip(), parts[1].strip()
-
-                dt = _parse_any_datetime(entry.get("published", ""), entry.get("published_parsed"))
-                if dt is None:
-                    continue
-                # Filtra estritamente notícias dos últimos 3 meses (90 dias)
-                if dt < cutoff_dt:
-                    continue
-
-                sentiment = classify_headline_sentiment(raw_title)
-                parsed_entries.append({
-                    "_dt": dt,
-                    "title": raw_title,
-                    "source": source,
-                    "published": dt.strftime("%d/%m/%Y %H:%M") if (dt.hour or dt.minute) else dt.strftime("%d/%m/%Y"),
-                    "published_iso": dt.strftime("%Y-%m-%dT%H:%M:%S"),
-                    "link": entry.get("link", "#"),
-                    "sentiment": sentiment,
-                })
-    except Exception:
-        pass
-
-    # Ordena das mais recentes primeiro e limita a no máximo 7 notícias
-    parsed_entries.sort(key=lambda x: x["_dt"], reverse=True)
-    news_items = [
-        {k: v for k, v in item.items() if k != "_dt"}
-        for item in parsed_entries[:7]
-    ]
-
-    if not news_items:
-        is_fii = cls == "FII"
-        t_now = now_dt.strftime("%d/%m/%Y")
-        t_iso = now_dt.strftime("%Y-%m-%dT%H:%M:%S")
-        news_items = [
-            {
-                "title": f"{ticker} ({name}) anuncia distribuição de proventos de R$ {row['last_dividend_per_share']:.2f} por cota/ação com DY anualizado de {row['dy_12m']:.1f}%" if row else f"{ticker} divulga atualização ao mercado",
-                "source": "InfoMoney / B3 Comunicado",
-                "published": t_now,
-                "published_iso": t_iso,
-                "link": f"https://www.google.com/search?q={ticker}+noticias",
-                "sentiment": "POSITIVO",
-            },
-            {
-                "title": (
-                    f"Gestão do {ticker} publica Relatório Gerencial mensal no B3 Fundos.NET detalhando portfólio, vacância e perspectivas"
-                    if is_fii else
-                    f"Diretoria de RI da {name} ({ticker}) atualiza demonstrativos no sistema CVM RAD / Empresas.NET"
-                ),
-                "source": "B3 Fundos.NET / CVM RAD",
-                "published": t_now,
-                "published_iso": t_iso,
-                "link": f"https://www.google.com/search?q={ticker}+fato+relevante",
-                "sentiment": "NEUTRO",
-            },
-        ]
-
-    pos_count = sum(1 for n in news_items if n["sentiment"] == "POSITIVO")
-    neg_count = sum(1 for n in news_items if n["sentiment"] == "NEGATIVO")
-    overall = "OTIMISTA (BULLISH)" if pos_count > neg_count else ("CAUTELOSO (BEARISH)" if neg_count > pos_count else "NEUTRO / EQUILIBRADO")
-
-    return {
-        "ticker": ticker,
-        "overall_sentiment": overall,
-        "positive_count": pos_count,
-        "negative_count": neg_count,
-        "neutral_count": len(news_items) - pos_count - neg_count,
-        "items": news_items[:7],
-    }
+    return NEWS_ADAPTER.fetch_news(
+        ticker=ticker,
+        name=name,
+        asset_class=cls,
+        parse_dt_fn=_parse_any_datetime,
+        sentiment_fn=classify_headline_sentiment,
+        ttl_seconds=ttl_seconds,
+        allow_network=allow_network,
+    )
 
 
 def _fetch_fnet_b3_documents(ticker: str, cnpj: str) -> list:

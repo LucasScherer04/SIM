@@ -398,13 +398,17 @@ Limitações registradas com transparência: (a) o histórico de patrimônio di�
 
 ### Etapa 3 --- Dados e notícias
 
--   [ ] Fontes Brasil documentadas
--   [ ] Fontes EUA documentadas
--   [ ] Câmbio documentado
--   [ ] Cache e última atualização
--   [ ] Gráfico histórico
--   [ ] Notícias com fonte, data e link
--   [ ] Falha externa não bloqueia o app
+-   [x] Fontes Brasil documentadas (`docs/provedores-mercado.md`: Yahoo Finance `.SA`, BCB SGS 1/432/4389/13522, B3 Fundos.NET e CVM RAD)
+-   [x] Fontes EUA documentadas (`docs/provedores-mercado.md`: Yahoo Finance NYSE/NASDAQ e S&P 500 `^GSPC`)
+-   [x] Câmbio documentado (`docs/provedores-mercado.md`: AwesomeAPI comercial primário + contingência oficial BCB PTAX SGS 1 + cache SQLite)
+-   [x] Cache e última atualização (`app/database.py` + `app/market_adapters.py`: tabelas `market_history_cache`, `asset_news_cache`, `macro_indicators_cache` e coluna `quote_source` em `assets_catalog`, com `source`, `currency`, `updated_at` e `data_state`)
+-   [x] Gráfico histórico (`app/market_service.py` + `static/app.js`: fim do gerador sintético `_generate_realistic_series`, estatísticas de faixa/média/mediana do período, linha de média histórica no gráfico, comparação simples com `^BVSP`/`^GSPC` rotuladas como `CALCULO_SIM` e estado vazio honesto quando sem rede/cache)
+-   [x] Notícias com fonte, data e link (`app/intelligence_service.py` + `app/market_adapters.py`: `GoogleNewsRssAdapter` com título, fonte, data/hora, link, resumo e cache SQLite; removida a criação de manchetes sintéticas em caso de falha)
+-   [x] Falha externa não bloqueia o app (`tests/test_market_stage3.py`: validação offline para ativos BR `PETR4`, `HGLG11` e EUA `AAPL`, câmbio, histórico e notícias)
+
+**Etapa 3 — concluída em 06/11/2026.**
+Arquivos criados/alterados: `docs/provedores-mercado.md` (documentação de cobertura Brasil/EUA, campos, limites, custos, autenticação, termos e contingência), `app/database.py` (`migrate_market_cache_tables` criando `market_history_cache`, `asset_news_cache`, `macro_indicators_cache` e `quote_source` em `assets_catalog`), `app/market_adapters.py` (`YahooFinanceAdapter`, `AwesomeBcbMacroAdapter`, `GoogleNewsRssAdapter`, `compute_historical_stats`, `compute_benchmark_comparison`), `app/market_service.py` (integração dos adaptadores, remoção da geração de séries sintéticas quando o provedor falha, metadados `quote_meta`/`history_meta`/`historical_stats`/`benchmark_comparison` e correção de `now_str` em `lookup_ticker_live`), `app/intelligence_service.py` (delegação de `fetch_asset_news` ao adaptador com cache SQLite e fim de manchetes fictícias), `static/index.html` e `static/app.js` (exibição de origem/moeda/data/estado no detalhe do ativo, painel de estatísticas históricas e comparação com índice como *Cálculo SIM*, linha de média histórica no gráfico e seção de notícias com fonte/data/resumo/alerta de cache), `tests/test_market_stage3.py` (7 novos testes cobrindo adaptadores, caches SQLite, estatísticas, benchmark, câmbio PTAX e resiliência offline).
+Limitações registradas com transparência: (a) cotações e históricos públicos via `yfinance` e Google News RSS são para uso pessoal e podem ter atraso de 15–20 min ou indisponibilidade temporária; (b) quando um ativo nunca teve histórico ou notícias sincronizados antes e a internet está indisponível, o sistema informa explicitamente a indisponibilidade em vez de inventar dados.
 
 ### Etapa 4 --- IA e radar
 

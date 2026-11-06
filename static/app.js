@@ -2208,11 +2208,15 @@ async function openAssetDetail(ticker, period = "1M", keepTabHistory = false) {
     }
   }
 
+  const qm = data.quote_meta || {};
+  const hm = data.history_meta || {};
+  const qSrc = qm.source || a.quote_source || "Catálogo local";
+  const qTs = qm.updated_at || a.updated_at || "sem horário registrado";
   setDetailHeaderReadout(
     a.last_price,
     data.period_change_pct,
     data.period_change_abs,
-    `Cotação ${a.is_stale ? 'desatualizada / de catálogo' : 'atual'} (${period}) · passe o mouse no gráfico para inspecionar`,
+    `Fonte: ${qSrc} · Moeda: ${a.currency} · Atualizado: ${qTs}`,
     a.currency
   );
 
@@ -2234,6 +2238,9 @@ async function openAssetDetail(ticker, period = "1M", keepTabHistory = false) {
 
   // Strip de indicadores especializados por classe de ativo
   renderAssetFundamentalsStrip(data);
+
+  // Faixas históricas, médias e comparação com índice (Etapa 3: separa dado observado vs. cálculo do SIM)
+  renderAssetHistoricalAndBenchmarkBox(data);
 
   // Painéis especializados por classe (Proventos / Estrutura ETF / Wall Street USD / On-Chain Cripto + Simulador)
   renderAssetClassSpecializedPanels(data);
@@ -2398,6 +2405,96 @@ function renderAssetFundamentalsStrip(data) {
     <div>
       <div class="stat-label">Liquidez diária B3</div>
       <div class="stat-value">${fmtCompact(a.volume_day)}</div>
+    </div>
+  `;
+}
+
+function renderAssetHistoricalAndBenchmarkBox(data) {
+  const box = document.getElementById("detail-historical-stats-box");
+  if (!box) return;
+  const a = data.asset || {};
+  const qm = data.quote_meta || {};
+  const hm = data.history_meta || {};
+  const hs = data.historical_stats || {};
+  const bc = data.benchmark_comparison || {};
+  const cur = a.currency || "BRL";
+
+  const stateLabelMap = {
+    LIVE: { text: "Ao vivo (provedor)", cls: "badge-pos" },
+    CACHED: { text: "Cache local", cls: "badge-gold" },
+    CATALOG: { text: "Catálogo local", cls: "badge-outline" },
+    UNAVAILABLE: { text: "Sem histórico", cls: "badge-neg" },
+  };
+  const hState = stateLabelMap[hm.data_state] || stateLabelMap.CATALOG;
+  const qState = stateLabelMap[qm.data_state] || stateLabelMap.CATALOG;
+
+  const warnHtml = hm.warning
+    ? `<div class="xs neg" style="margin-top:6px">⚠ ${esc(hm.warning)}</div>`
+    : "";
+
+  let statsGridHtml = `<div class="xs faint" style="margin-top:8px">${esc(hs.reason || "Série histórica indisponível no período.")}</div>`;
+  if (hs.available) {
+    const distAvgCls = hs.distance_from_avg_pct >= 0 ? "pos" : "neg";
+    let benchCell = `
+      <div>
+        <div class="stat-label">Vs. ${esc(bc.benchmark_name || "Índice")} (${esc(data.period)})</div>
+        <div class="stat-value muted" style="font-size:14px">Indisponível</div>
+        <div class="stat-foot">${esc(bc.reason || "Sem série do índice")}</div>
+      </div>`;
+    if (bc.available) {
+      const diffCls = bc.relative_diff_pp >= 0 ? "pos" : "neg";
+      benchCell = `
+        <div>
+          <div class="stat-label">Vs. ${esc(bc.benchmark_name)} (${esc(data.period)})</div>
+          <div class="stat-value ${diffCls}" style="font-size:15.5px">${bc.relative_diff_pp >= 0 ? "+" : ""}${Number(bc.relative_diff_pp).toFixed(2).replace(".", ",")} p.p.</div>
+          <div class="stat-foot">Ativo ${fmtPct(bc.asset_return_pct)} · Índice ${fmtPct(bc.benchmark_return_pct)}</div>
+        </div>`;
+    }
+
+    statsGridHtml = `
+      <div class="grid" style="grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:14px;margin-top:10px">
+        <div>
+          <div class="stat-label">Média histórica (${esc(data.period)})</div>
+          <div class="stat-value" style="font-size:15.5px">${fmtMoney(hs.avg_price, cur)}</div>
+          <div class="stat-foot ${distAvgCls}">${fmtPct(hs.distance_from_avg_pct)} vs. média</div>
+        </div>
+        <div>
+          <div class="stat-label">Mediana (${esc(data.period)})</div>
+          <div class="stat-value" style="font-size:15.5px">${fmtMoney(hs.median_price, cur)}</div>
+          <div class="stat-foot">${hs.points_count} pregões/pontos</div>
+        </div>
+        <div>
+          <div class="stat-label">Posição na faixa (Mín–Máx)</div>
+          <div class="stat-value" style="font-size:15.5px">${Number(hs.position_in_range_pct).toFixed(1).replace(".", ",")}%</div>
+          <div class="stat-foot">0% = mín (${fmtMoney(hs.min_price, cur)}) · 100% = máx</div>
+        </div>
+        <div>
+          <div class="stat-label">Volatilidade por passo</div>
+          <div class="stat-value" style="font-size:15.5px">${Number(hs.step_volatility_pct).toFixed(2).replace(".", ",")}%</div>
+          <div class="stat-foot">Desvio-padrão dos retornos</div>
+        </div>
+        ${benchCell}
+      </div>`;
+  }
+
+  box.innerHTML = `
+    <div style="padding:12px 14px;border:1px solid var(--border);border-radius:10px;background:var(--surface-2)">
+      <div class="row between wrap" style="gap:8px">
+        <div class="xs muted">
+          <strong>Dado observado:</strong> Cotação em <strong>${esc(cur)}</strong> (${esc(qm.market || "BR")}) via <strong>${esc(qm.source || "Catálogo")}</strong>
+          ${qm.updated_at ? ` em <span class="mono">${esc(qm.updated_at)}</span>` : " (sem data de sincronização)"}
+          · Gráfico: <strong>${esc(hm.source || "Yahoo Finance")}</strong>
+          ${hm.updated_at ? ` (<span class="mono">${esc(hm.updated_at)}</span>)` : ""}
+        </div>
+        <div class="row gap-2">
+          <span class="badge ${qState.cls}" title="Estado da cotação">Cotação: ${qState.text}</span>
+          <span class="badge ${hState.cls}" title="Estado da série histórica">Histórico: ${hState.text}</span>
+        </div>
+      </div>
+      ${warnHtml}
+      <div class="xs strong muted" style="margin-top:10px;text-transform:uppercase;letter-spacing:0.04em">Cálculo do SIM sobre a série observada (${esc(data.period)})</div>
+      ${statsGridHtml}
+      <div class="xs faint" style="margin-top:8px">${esc(hs.methodology_note || "")}</div>
     </div>
   `;
 }
@@ -2762,15 +2859,34 @@ function drawInteractiveAssetChart(data) {
   ctx.scale(dpr, dpr);
 
   const points = data.points || [];
-  if (points.length < 2) return;
+  if (points.length < 2) {
+    ctx.clearRect(0, 0, W, H);
+    ctx.fillStyle = cssVar("--chart-text") || "#8e949f";
+    ctx.font = "500 13px Geist, sans-serif";
+    ctx.textAlign = "center";
+    ctx.fillText(
+      "Série histórica indisponível no momento (sem conexão com o provedor e sem cache local).",
+      W / 2,
+      H / 2
+    );
+    canvas.onmousemove = null;
+    canvas.ontouchmove = null;
+    canvas.onmouseleave = null;
+    return;
+  }
 
   const prices = points.map(p => p.price);
   const userPm = data.user_position && data.user_position.has_position ? data.user_position.avg_price : null;
+  const histAvg = data.historical_stats && data.historical_stats.available ? Number(data.historical_stats.avg_price) : null;
   let minP = Math.min(...prices);
   let maxP = Math.max(...prices);
   if (userPm && userPm > 0) {
     minP = Math.min(minP, userPm * 0.985);
     maxP = Math.max(maxP, userPm * 1.015);
+  }
+  if (histAvg && histAvg > 0) {
+    minP = Math.min(minP, histAvg * 0.99);
+    maxP = Math.max(maxP, histAvg * 1.01);
   }
   const padY = (maxP - minP) * 0.14 || 1.0;
   minP -= padY;
@@ -2820,6 +2936,24 @@ function drawInteractiveAssetChart(data) {
     const stepX = Math.max(1, Math.floor((points.length - 1) / 5));
     for (let i = 0; i < points.length; i += stepX) {
       ctx.fillText(points[i].label, xForIdx(i), H - 8);
+    }
+
+    // Linha tracejada da Média histórica do período (Cálculo SIM)
+    if (histAvg && histAvg > 0) {
+      const hyAvg = yForPrice(histAvg);
+      ctx.save();
+      ctx.setLineDash([3, 5]);
+      ctx.strokeStyle = "rgba(142, 148, 159, 0.45)";
+      ctx.lineWidth = 1.1;
+      ctx.beginPath();
+      ctx.moveTo(padLeft, hyAvg);
+      ctx.lineTo(padLeft + plotW, hyAvg);
+      ctx.stroke();
+      ctx.fillStyle = "rgba(142, 148, 159, 0.85)";
+      ctx.font = "500 10px Geist, sans-serif";
+      ctx.textAlign = "right";
+      ctx.fillText(`Média ${histAvg.toFixed(2).replace(".", ",")}`, padLeft + plotW - 6, hyAvg - 5);
+      ctx.restore();
     }
 
     // Linha tracejada do Preço Médio do usuário
@@ -2939,11 +3073,15 @@ function drawInteractiveAssetChart(data) {
     if (e.touches && e.touches[0]) handlePointer(e.touches[0].clientX);
   };
   canvas.onmouseleave = () => {
+    const qm = data.quote_meta || {};
+    const qSrc = qm.source || data.asset.quote_source || "Catálogo Local";
+    const qUpd = qm.updated_at || data.asset.updated_at || "";
+    const qState = qm.data_state === "CACHED" ? " [CACHE]" : "";
     setDetailHeaderReadout(
       data.asset.last_price,
       data.period_change_pct,
       data.period_change_abs,
-      `Cotação atual (${data.period}) · passe o mouse no gráfico para inspecionar`,
+      `Cotação (${data.period}) · Fonte: ${qSrc}${qState}${qUpd ? ` · Atualizado: ${qUpd}` : ""} · Moeda: ${data.asset.currency}`,
       data.asset.currency
     );
     renderChart(null);
@@ -3511,12 +3649,21 @@ function renderAssetNewsSection(news) {
   if (!news) return;
   const badge = document.getElementById("detail-news-sentiment-badge");
   const sent = news.overall_sentiment || "NEUTRO";
-  badge.textContent = sent;
+  const nState = news.data_state || "LIVE";
+  const stateLabel = nState === "CACHED" ? " · CACHE" : nState === "UNAVAILABLE" ? " · OFFLINE" : "";
+  badge.textContent = `${sent}${stateLabel}`;
   badge.className = `badge ${sent.includes("POSITIVO") || sent.includes("OTIMISTA") ? "badge-pos" : sent.includes("NEGATIVO") || sent.includes("CAUTELOSO") ? "badge-neg" : ""}`;
 
   const listEl = document.getElementById("detail-news-list");
   const nowMs = Date.now();
   const maxAgeMs = 90 * 24 * 60 * 60 * 1000; // 3 meses (90 dias)
+
+  const metaStrip = `
+    <div class="row between wrap gap-8 xs faint" style="margin-bottom:8px">
+      <span>Fonte: <strong class="muted">${esc(news.source || "Google News RSS")}</strong>${news.updated_at ? ` · Atualizado em: <strong class="mono muted">${esc(news.updated_at)}</strong>` : ""}</span>
+      ${news.warning ? `<span style="color:#e8b04b">${esc(news.warning)}</span>` : `<span>Ordenação cronológica recente</span>`}
+    </div>
+  `;
 
   // Filtra últimos 3 meses, ordena das mais recentes primeiro e limita a no máximo 7 notícias
   const sortedNews = [...(news.items || [])]
@@ -3529,25 +3676,33 @@ function renderAssetNewsSection(news) {
     .slice(0, 7);
 
   if (sortedNews.length === 0) {
-    listEl.innerHTML = `<div class="empty-sm">Nenhuma notícia publicada nos últimos 3 meses para este ativo.</div>`;
+    const emptyMsg = nState === "UNAVAILABLE"
+      ? "Provedor de notícias indisponível no momento e sem cache local salvo para este ativo."
+      : "Nenhuma notícia recente encontrada nas fontes públicas para este ativo.";
+    listEl.innerHTML = `${metaStrip}<div class="empty-sm">${esc(emptyMsg)}</div>`;
     return;
   }
 
   listEl.innerHTML = `
+    ${metaStrip}
     <div class="news-grid-horizontal">
       ${sortedNews.map((n, idx) => {
         const seq = String(idx + 1).padStart(2, "0");
         const sCls = n.sentiment === "POSITIVO" ? "badge-pos" : n.sentiment === "NEGATIVO" ? "badge-neg" : "";
         const dateFmt = formatDatePtBr(n.published, n.published_iso);
+        const summaryHtml = n.summary && n.summary !== n.title
+          ? `<div class="xs muted" style="margin-top:4px;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden">${esc(n.summary)}</div>`
+          : "";
         return `
           <a href="${encodeURI(n.link || '#')}" target="_blank" rel="noopener noreferrer" class="news-card-strip">
             <div class="news-meta">
-              <span><strong class="mono faint" style="margin-right:6px">#${seq}</strong>${esc(n.source)} · <strong class="muted">${esc(dateFmt)}</strong></span>
+              <span><strong class="mono faint" style="margin-right:6px">#${seq}</strong>${esc(n.source || "Notícia")} · <strong class="muted">${esc(dateFmt)}</strong></span>
               <span class="badge ${sCls}">${esc(n.sentiment)}</span>
             </div>
             <div class="news-title">${esc(n.title)}</div>
+            ${summaryHtml}
             <div class="row between" style="margin-top:6px">
-              <span class="xs faint">Ler notícia completa</span>
+              <span class="xs faint">Abrir matéria original</span>
               <span class="link xs">${ic("arrow-up-right", 12)}</span>
             </div>
           </a>

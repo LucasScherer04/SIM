@@ -88,6 +88,48 @@ def migrate_snapshots_table(conn=None):
         conn.close()
 
 
+def migrate_market_cache_tables(conn=None):
+    """Cria tabelas de cache persistente de histórico, notícias e indicadores macro (Etapa 3)."""
+    own_conn = conn is None
+    if own_conn:
+        conn = get_conn()
+    existing_cat = {row[1] for row in conn.execute("PRAGMA table_info(assets_catalog)").fetchall()}
+    if existing_cat and "quote_source" not in existing_cat:
+        conn.execute("ALTER TABLE assets_catalog ADD COLUMN quote_source TEXT DEFAULT 'Catálogo local'")
+
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS market_history_cache (
+            ticker TEXT NOT NULL,
+            period TEXT NOT NULL,
+            points_json TEXT NOT NULL,
+            source TEXT NOT NULL DEFAULT '',
+            currency TEXT NOT NULL DEFAULT 'BRL',
+            fetched_at TEXT NOT NULL,
+            PRIMARY KEY (ticker, period)
+        )
+    """)
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS asset_news_cache (
+            ticker TEXT PRIMARY KEY,
+            items_json TEXT NOT NULL,
+            source TEXT NOT NULL DEFAULT '',
+            fetched_at TEXT NOT NULL
+        )
+    """)
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS macro_indicators_cache (
+            key TEXT PRIMARY KEY,
+            value REAL NOT NULL,
+            change_pct REAL DEFAULT 0.0,
+            source TEXT NOT NULL DEFAULT '',
+            fetched_at TEXT NOT NULL
+        )
+    """)
+    conn.commit()
+    if own_conn:
+        conn.close()
+
+
 def migrate_to_multiuser(conn=None):
     """
     Garante o suporte a múltiplos usuários e dados isolados por conta no SQLite.
@@ -423,6 +465,7 @@ def init_db():
     migrate_fixed_income_columns(conn)
     migrate_fx_columns(conn)
     migrate_snapshots_table(conn)
+    migrate_market_cache_tables(conn)
     migrate_to_multiuser(conn)
 
     # Seed default allocation targets
