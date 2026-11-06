@@ -359,12 +359,24 @@ _Etapa 0 concluída em 06/11/2026. Ver `docs/diagnostico-sim.md`. Alterações: 
 
 ### Etapa 1 --- Carteira
 
--   [ ] Cadastro e operações validados
--   [ ] Proventos validados
--   [ ] Posição e preço médio validados
--   [ ] Resultados realizados/não realizados validados
--   [ ] BRL e USD tratados corretamente
--   [ ] Testes de regressão passando
+-   [ ] Cadastro e operações validados (compra/venda cobertas por testes; falta validar oversell e câmbio da data da operação — ver propostas)
+-   [ ] Proventos validados (soma coberta por testes; USD sem conversão — proposta pendente)
+-   [x] Posição e preço médio validados (`tests/test_portfolio_calc.py`)
+-   [x] Resultados realizados/não realizados validados (comportamento atual fixado em testes)
+-   [ ] BRL e USD tratados corretamente (aguardando aprovação das propostas P2 e P3)
+-   [x] Testes de regressão passando (25 novos + 47 existentes)
+
+**Etapa 1 — andamento (06/11/2026).** Feito: criado `tests/test_portfolio_calc.py` (25 testes, banco temporário, rede mockada) que fixa as regras atuais de PM, venda parcial/total, resultado realizado BRL/USD, proventos e renda fixa (IR regressivo, indexadores, âncora de mercado). Testes marcados "CARACTERIZACAO" descrevem comportamento questionável sem endossá-lo. Nenhuma regra de cálculo foi alterada.
+
+**Propostas pendentes de aprovação (regra atual → problema → regra proposta):**
+
+| # | Regra atual | Problema | Proposta |
+|---|---|---|---|
+| P1 | `POST /api/transactions` aceita venda maior que a quantidade em custódia; o resumo trunca em zero | Resultado realizado e posição ficam inconsistentes sem aviso | Rejeitar com HTTP 400 vendas acima da quantidade em custódia na data |
+| P2 | Ativo em USD: `invested_brl = qtd × PM_usd × câmbio atual` | Lucro em BRL ignora o câmbio pago nas compras (`cost_basis_brl` já é calculado, mas não usado) | Usar `cost_basis_brl` como custo em BRL da posição aberta; exibir também o lucro em USD |
+| P3 | `fx_rate` da operação = câmbio **de hoje** no cadastro, ignorando `tx_date`; não há campo de câmbio no payload | Compra/venda retroativa em USD recebe câmbio errado, o que afeta custo e IR | Aceitar `fx_rate` opcional informado pelo usuário; sem ele, manter o câmbio atual mas marcar a operação como "câmbio estimado" |
+| P4 | `total_dividends_brl` soma `total_amount` sem converter moeda | Provento de US$ 10 entra como R$ 10 | Converter proventos em USD pelo câmbio atual, exibindo moeda original e a taxa usada (provento não guarda câmbio histórico) |
+| P5 | Valores monetários em `float` | Erros de arredondamento acumulados | Manter `float` no armazenamento e arredondar a 2 casas só na exibição/agregação, ou migrar para `Decimal` nos cálculos (maior mudança) — recomendo a primeira opção por ora |
 
 ### Etapa 2 --- Dashboard
 
