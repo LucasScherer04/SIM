@@ -1153,6 +1153,29 @@
         </div>
       </div>
 
+      <!-- BACKUP E RESTAURAÇÃO SQLITE (Etapa 5) -->
+      <div class="card card-pad stack" style="background:var(--surface-2);padding:14px;gap:10px">
+        <div class="row between wrap gap-2">
+          <div>
+            <div class="strong" style="font-size:14px;display:flex;align-items:center;gap:6px">
+              <span data-icon="database" data-size="16" style="color:var(--accent)"></span>Backup &amp; Restauração do Banco (SQLite)
+            </div>
+            <div class="xs faint" style="margin-top:2px">Crie cópias verificadas (<code class="mono">PRAGMA integrity_check</code>) e restaure o estado exato da sua carteira</div>
+          </div>
+          <div class="row gap-2 wrap">
+            <button type="button" class="btn btn-sm btn-primary" onclick="createSystemBackup()" id="btn-create-backup">
+              <span data-icon="download" data-size="13"></span><span>Criar Backup Agora</span>
+            </button>
+            <button type="button" class="btn btn-sm btn-secondary" onclick="document.getElementById('backup-restore-file-input').click()">
+              <span data-icon="upload" data-size="13"></span><span>Restaurar de Arquivo (.db)</span>
+            </button>
+            <input type="file" id="backup-restore-file-input" accept=".db,.sqlite,.sqlite3" class="hidden" onchange="onRestoreBackupFileSelected(this.files)" />
+          </div>
+        </div>
+        <div id="system-backup-feedback" class="xs hint"></div>
+        <div id="system-backups-list" class="xs faint"></div>
+      </div>
+
       <div class="divider"></div>
 
       <!-- CONFIGURAÇÃO DO WHATSAPP -->

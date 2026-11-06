@@ -426,11 +426,14 @@ Limitações registradas com transparência: (a) quando nenhuma chave de API ext
 
 ### Etapa 5 --- Uso diário
 
--   [ ] Backup/restauração testados
--   [ ] Inicialização simples no Windows
--   [ ] Instalação/pacote validado
--   [ ] Manual criado
--   [ ] Teste completo realizado
+-   [x] Backup/restauração testados (`app/backup_service.py` + `POST /api/system/backups` + `POST /api/system/backups/{id}/restore` + `POST /api/system/backups/restore-upload`: API online `sqlite3.Connection.backup`, `PRAGMA integrity_check == ok`, backup automático `pre_restore_auto` antes de restaurar e rejeição segura de arquivos corrompidos/incompletos)
+-   [x] Inicialização simples no Windows (`Iniciar_SIM.bat` e `Iniciar_SIM_Silencioso.vbs`: inicia o servidor FastAPI em segundo plano sem janela de terminal aberta e abre o aplicativo em modo janela dedicada Chrome/Edge `--app=http://localhost:8000`)
+-   [x] Instalação/pacote validado (`Instalar_SIM_Windows.bat`: verifica Python, cria backup preventivo `pre_update`, instala/atualiza `requirements.txt`, aplica migrações SQLite e cria o atalho `SIM - Investimentos.lnk` na Área de Trabalho)
+-   [x] Manual criado (`docs/manual-uso-sim.md` e `README.md`: instruções objetivas de instalação, abertura diária, operação da carteira BRL/USD, provedores de dados, configuração segura da chave de IA, atualização, backup e restauração)
+-   [x] Teste completo realizado (`tests/test_stage5_backup_and_e2e.py`: teste de backup/restauração, recuperação após falha de arquivo inválido e fluxo ponta a ponta sobre cópia isolada de `sim_database.db` validando carteira, dashboard, análise IA, novas operações e restauração do estado original)
+
+**Etapa 5 — concluída em 06/11/2026.**
+Arquivos criados/alterados: `app/backup_service.py` (`verify_sqlite_file`, `create_backup`, `list_backups`, `get_backup_file_path`, `restore_backup`, `restore_from_uploaded_bytes`), `app/main.py` (rotas `/api/system/backups`, `/api/system/backups/{id}/download`, `/api/system/backups/{id}/restore` e `/api/system/backups/restore-upload`), `static/index.html` e `static/app.js` (seção **Backup & Restauração do Banco (SQLite)** no modal de Configurações com criação em 1 clique, download `.db`, restauração por item e restauração via upload de arquivo), `Iniciar_SIM.bat`, `Iniciar_SIM_Silencioso.vbs` e `Instalar_SIM_Windows.bat` (inicialização silenciosa sem terminal e instalador/atualizador Windows com criação de atalho na Área de Trabalho), `docs/manual-uso-sim.md` e `README.md` (manual completo de uso, provedores, IA e backup/restauração), `tests/test_stage5_backup_and_e2e.py` (4 testes cobrindo ciclo completo de backup/download/restauração, recuperação após falha com arquivo corrompido/incompleto, fluxo E2E sobre cópia isolada da carteira real e validação dos scripts Windows/manual). Suíte total: 125 testes passando.
 
 ## 9. Definição de pronto
 

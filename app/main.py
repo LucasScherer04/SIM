@@ -71,6 +71,13 @@ from .whatsapp_service import (
     start_whatsapp_scheduler_thread,
     get_whatsapp_scheduler_status,
 )
+from .backup_service import (
+    create_backup,
+    list_backups,
+    get_backup_file_path,
+    restore_backup,
+    restore_from_uploaded_bytes,
+)
 
 
 @asynccontextmanager
@@ -1170,6 +1177,84 @@ def api_mobile_access(current_user: Dict[str, Any] = Depends(get_current_user)):
         "mobile_url": url,
         "qr_api_url": f"https://api.qrserver.com/v1/create-qr-code/?size=240x240&data={url}",
     }
+
+
+class BackupCreatePayload(BaseModel):
+    label: str = "manual"
+
+
+class BackupUploadRestorePayload(BaseModel):
+    filename: str = "backup_sim.db"
+    content_base64: str
+
+
+@app.get("/api/system/backups")
+def api_list_backups(limit: int = Query(20, ge=1, le=200), current_user: Dict[str, Any] = Depends(get_current_user)):
+    items = list_backups()[:limit]
+    return {"count": len(items), "backups": items, "items": items}
+
+
+@app.post("/api/system/backups")
+def api_create_backup(
+    label: Optional[str] = Query(None),
+    payload: Optional[BackupCreatePayload] = None,
+    current_user: Dict[str, Any] = Depends(get_current_user),
+):
+    try:
+        chosen_label = label or (payload.label if payload else "manual")
+        manifest = create_backup(label=chosen_label)
+        return {"status": "ok", "backup": manifest, "backups": list_backups()}
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=f"Falha ao criar backup: {exc}")
+
+
+@app.get("/api/system/backups/{backup_id}/download")
+def api_download_backup(backup_id: str, current_user: Dict[str, Any] = Depends(get_current_user)):
+    try:
+        db_file = get_backup_file_path(backup_id)
+        return FileResponse(
+            db_file,
+            media_type="application/octet-stream",
+            filename=f"SIM_backup_{backup_id}.db",
+        )
+    except Exception as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+
+
+@app.post("/api/system/backups/{backup_id}/restore")
+def api_restore_backup(backup_id: str, current_user: Dict[str, Any] = Depends(get_current_user)):
+    try:
+        res = restore_backup(backup_id)
+        return {"status": "ok", "restore": res, **res, "backups": list_backups()}
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=f"Falha ao restaurar backup: {exc}")
+
+
+@app.post("/api/system/backups/restore-upload")
+async def api_restore_backup_upload(request: Request, current_user: Dict[str, Any] = Depends(get_current_user)):
+    try:
+        content_type = (request.headers.get("content-type") or "").lower()
+        raw_bytes: bytes = b""
+        filename = "backup_sim.db"
+        if "multipart/form-data" in content_type:
+            form = await request.form()
+            up_file = form.get("file")
+            if up_file is None or not hasattr(up_file, "read"):
+                raise ValueError("Nenhum arquivo de backup enviado no formulário.")
+            filename = getattr(up_file, "filename", None) or filename
+            raw_bytes = await up_file.read()
+        else:
+            body = await request.json()
+            filename = body.get("filename") or filename
+            raw_b64 = body.get("content_base64") or ""
+            if "," in raw_b64:
+                raw_b64 = raw_b64.split(",", 1)[1]
+            raw_bytes = base64.b64decode(raw_b64)
+
+        res = restore_from_uploaded_bytes(raw_bytes, filename=filename)
+        return {"status": "ok", "restore": res, **res, "backups": list_backups()}
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
 
 
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")

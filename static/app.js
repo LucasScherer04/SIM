@@ -5338,7 +5338,148 @@ async function openAiSettingsModal() {
 
   document.getElementById("ai-test-feedback").textContent = "";
   document.getElementById("wa-test-feedback").textContent = "";
+  const bkpFb = document.getElementById("system-backup-feedback");
+  if (bkpFb) bkpFb.textContent = "";
+  loadSystemBackupsList();
   openModal("modal-ai-settings");
+}
+
+/* ---------- Backup & Restauração SQLite (Etapa 5) ---------- */
+async function loadSystemBackupsList() {
+  const listEl = document.getElementById("system-backups-list");
+  if (!listEl) return;
+  listEl.innerHTML = `<span class="faint">Carregando backups locais…</span>`;
+  try {
+    const res = await fetch("/api/system/backups?limit=8");
+    const data = await res.json();
+    const items = (data && data.items) || [];
+    if (items.length === 0) {
+      listEl.innerHTML = `<span class="faint">Nenhum backup registrado ainda na pasta <code class="mono">backups/</code>.</span>`;
+      return;
+    }
+    listEl.innerHTML = `
+      <div class="table-wrap" style="margin-top:4px">
+        <table class="table">
+          <thead>
+            <tr>
+              <th>ID do Backup</th>
+              <th>Data/Hora</th>
+              <th>Rótulo</th>
+              <th class="r">Tamanho</th>
+              <th>Integridade</th>
+              <th class="r">Ações</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${items.map(b => {
+              const kb = ((b.file_size_bytes || 0) / 1024).toFixed(1);
+              return `
+                <tr>
+                  <td class="mono xs">${esc(b.backup_id)}</td>
+                  <td class="mono xs">${esc(b.created_at || "")}</td>
+                  <td class="xs">${esc(b.label || "manual")}</td>
+                  <td class="r mono xs">${kb} KB</td>
+                  <td><span class="badge ${b.integrity_check === 'ok' ? 'badge-accent' : 'badge-outline'}">${esc(b.integrity_check || "ok")}</span></td>
+                  <td class="r">
+                    <div class="row gap-1" style="justify-content:flex-end">
+                      <button type="button" class="btn btn-sm btn-ghost" onclick="downloadAuthed('/api/system/backups/${encodeURIComponent(b.backup_id)}/download', 'sim_backup_${encodeURIComponent(b.backup_id)}.db')">Baixar</button>
+                      <button type="button" class="btn btn-sm btn-secondary" onclick="restoreSystemBackupById('${esc(b.backup_id)}')">Restaurar</button>
+                    </div>
+                  </td>
+                </tr>
+              `;
+            }).join("")}
+          </tbody>
+        </table>
+      </div>
+    `;
+  } catch (err) {
+    listEl.innerHTML = `<span class="neg">Erro ao listar backups: ${esc(err.message || "")}</span>`;
+  }
+}
+
+async function createSystemBackup() {
+  const btn = document.getElementById("btn-create-backup");
+  const fb = document.getElementById("system-backup-feedback");
+  if (btn) btn.disabled = true;
+  if (fb) fb.innerHTML = `<span class="faint">Gerando cópia íntegra do banco SQLite…</span>`;
+  try {
+    const res = await fetch("/api/system/backups?label=manual_ui", { method: "POST" });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.detail || "Falha ao criar backup.");
+    const bkp = data.backup || {};
+    if (fb) {
+      fb.innerHTML = `<span class="pos strong">Backup criado e verificado (${esc(bkp.backup_id || "")} · PRAGMA integrity_check = ${esc(bkp.integrity_check || "ok")})!</span>`;
+    }
+    showToast("Backup SQLite criado com sucesso!");
+    await loadSystemBackupsList();
+  } catch (err) {
+    if (fb) fb.innerHTML = `<span class="neg strong">Erro no backup: ${esc(err.message || "")}</span>`;
+  } finally {
+    if (btn) btn.disabled = false;
+  }
+}
+
+async function restoreSystemBackupById(backupId) {
+  if (!backupId) return;
+  if (!confirm(`Deseja restaurar o banco de dados para o backup "${backupId}"?\n\nO SIM criará automaticamente um backup de segurança do estado atual antes de restaurar.`)) {
+    return;
+  }
+  const fb = document.getElementById("system-backup-feedback");
+  if (fb) fb.innerHTML = `<span class="faint">Restaurando backup ${esc(backupId)}…</span>`;
+  try {
+    const res = await fetch(`/api/system/backups/${encodeURIComponent(backupId)}/restore`, { method: "POST" });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.detail || "Falha ao restaurar backup.");
+    if (fb) {
+      fb.innerHTML = `<span class="pos strong">Banco restaurado com sucesso a partir de ${esc(backupId)}! Recarregando carteira…</span>`;
+    }
+    showToast("Banco restaurado com sucesso!");
+    await loadSystemBackupsList();
+    await boot();
+  } catch (err) {
+    if (fb) fb.innerHTML = `<span class="neg strong">Falha na restauração: ${esc(err.message || "")}</span>`;
+  }
+}
+
+async function onRestoreBackupFileSelected(files) {
+  const file = files && files[0];
+  const input = document.getElementById("backup-restore-file-input");
+  if (!file) return;
+  if (!confirm(`Deseja restaurar o banco de dados a partir do arquivo "${file.name}"?\n\nUm backup automático do banco atual será salvo antes da restauração.`)) {
+    if (input) input.value = "";
+    return;
+  }
+  const fb = document.getElementById("system-backup-feedback");
+  if (fb) fb.innerHTML = `<span class="faint">Validando e restaurando arquivo ${esc(file.name)}…</span>`;
+  try {
+    const contentBase64 = await new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(String(reader.result || ""));
+      reader.onerror = () => reject(new Error("Falha ao ler o arquivo selecionado."));
+      reader.readAsDataURL(file);
+    });
+    const res = await fetch("/api/system/backups/restore-upload", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        filename: file.name,
+        content_base64: contentBase64,
+      }),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.detail || "Arquivo de backup inválido.");
+    if (fb) {
+      fb.innerHTML = `<span class="pos strong">Arquivo "${esc(file.name)}" validado e restaurado com sucesso! Recarregando carteira…</span>`;
+    }
+    showToast("Banco restaurado a partir do arquivo!");
+    await loadSystemBackupsList();
+    await boot();
+  } catch (err) {
+    if (fb) fb.innerHTML = `<span class="neg strong">Erro ao restaurar arquivo: ${esc(err.message || "")}</span>`;
+  } finally {
+    if (input) input.value = "";
+  }
 }
 
 function onWhatsAppProviderChanged() {
