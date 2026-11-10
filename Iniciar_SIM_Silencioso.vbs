@@ -1,37 +1,93 @@
 ' ============================================================================
 ' SIM - Inicializador Silencioso para Windows (sem janela de terminal aberta)
-' Inicia o servidor FastAPI em segundo plano (se ainda nao estiver rodando)
-' e abre a interface do SIM em modo aplicativo.
+' Inicia o servidor FastAPI em segundo plano (se ainda nao estiver rodando),
+' aguarda o servidor responder HTTP na porta 8000 e abre a interface em modo App.
 ' ============================================================================
 Option Explicit
 
-Dim fso, shell, appDir, checkCmd, rc
+Dim fso, shell, appDir
 Set fso = CreateObject("Scripting.FileSystemObject")
 Set shell = CreateObject("WScript.Shell")
 
 appDir = fso.GetParentFolderName(WScript.ScriptFullName)
 shell.CurrentDirectory = appDir
 
-' Verifica se a porta 8000 ja esta escutando
-checkCmd = "cmd.exe /c netstat -ano | findstr "":8000 "" | findstr ""LISTENING"""
-rc = shell.Run(checkCmd, 0, True)
-
-If rc <> 0 Then
-    ' Inicia o servidor FastAPI em background oculto (0 = oculto, False = nao bloqueia)
-    shell.Run "cmd.exe /c python -m uvicorn app.main:app --host 0.0.0.0 --port 8000", 0, False
-    WScript.Sleep 1800
-End If
-
-' Tenta abrir em modo App no Chrome ou Edge; caso contrario abre no navegador padrao
-On Error Resume Next
-Err.Clear
-shell.Run "chrome.exe --app=http://localhost:8000", 1, False
-If Err.Number <> 0 Then
+Function IsServerReady()
+    On Error Resume Next
     Err.Clear
-    shell.Run "msedge.exe --app=http://localhost:8000", 1, False
+    Dim http
+    Set http = CreateObject("MSXML2.ServerXMLHTTP.6.0")
     If Err.Number <> 0 Then
         Err.Clear
-        shell.Run "http://localhost:8000", 1, False
+        Set http = CreateObject("WinHttp.WinHttpRequest.5.1")
+    End If
+    If Not (http Is Nothing) Then
+        http.setTimeouts 1000, 1000, 1000, 1000
+        http.Open "GET", "http://127.0.0.1:8000/manifest.json", False
+        http.Send
+        If Err.Number = 0 And http.Status >= 200 And http.Status < 500 Then
+            IsServerReady = True
+            On Error GoTo 0
+            Exit Function
+        End If
+    End If
+    Err.Clear
+    On Error GoTo 0
+    IsServerReady = False
+End Function
+
+' Verifica se o servidor ja esta pronto e respondendo HTTP na porta 8000
+If Not IsServerReady() Then
+    ' Verifica se ja existe processo escutando na porta 8000 (ainda subindo)
+    Dim checkCmd, rc
+    checkCmd = "cmd.exe /c netstat -ano | findstr "":8000 "" | findstr ""LISTENING"""
+    rc = shell.Run(checkCmd, 0, True)
+
+    If rc <> 0 Then
+        ' Inicia o servidor FastAPI em background oculto (0 = oculto, False = nao bloqueia)
+        shell.Run "cmd.exe /c python -m uvicorn app.main:app --host 0.0.0.0 --port 8000", 0, False
+    End If
+
+    ' Aguarda ate 30 segundos (100 x 300ms) ate o servidor responder HTTP de fato
+    Dim attempts
+    For attempts = 1 To 100
+        If IsServerReady() Then
+            Exit For
+        End If
+        WScript.Sleep 300
+    Next
+End If
+
+' Localiza Chrome ou Edge nos caminhos padrao do Windows para abrir em modo App
+Dim browserCandidates(4), browserPath, candidate, i
+browserCandidates(0) = shell.ExpandEnvironmentStrings("%ProgramFiles%\Google\Chrome\Application\chrome.exe")
+browserCandidates(1) = shell.ExpandEnvironmentStrings("%ProgramFiles(x86)%\Google\Chrome\Application\chrome.exe")
+browserCandidates(2) = shell.ExpandEnvironmentStrings("%LocalAppData%\Google\Chrome\Application\chrome.exe")
+browserCandidates(3) = shell.ExpandEnvironmentStrings("%ProgramFiles(x86)%\Microsoft\Edge\Application\msedge.exe")
+browserCandidates(4) = shell.ExpandEnvironmentStrings("%ProgramFiles%\Microsoft\Edge\Application\msedge.exe")
+
+browserPath = ""
+For i = 0 To UBound(browserCandidates)
+    candidate = browserCandidates(i)
+    If fso.FileExists(candidate) Then
+        browserPath = candidate
+        Exit For
+    End If
+Next
+
+On Error Resume Next
+Err.Clear
+If browserPath <> "" Then
+    shell.Run """" & browserPath & """ --app=http://localhost:8000", 1, False
+Else
+    shell.Run "chrome.exe --app=http://localhost:8000", 1, False
+    If Err.Number <> 0 Then
+        Err.Clear
+        shell.Run "msedge.exe --app=http://localhost:8000", 1, False
+        If Err.Number <> 0 Then
+            Err.Clear
+            shell.Run "http://localhost:8000", 1, False
+        End If
     End If
 End If
 On Error GoTo 0
