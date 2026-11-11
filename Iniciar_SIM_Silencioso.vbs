@@ -12,38 +12,62 @@ Set shell = CreateObject("WScript.Shell")
 appDir = fso.GetParentFolderName(WScript.ScriptFullName)
 shell.CurrentDirectory = appDir
 
+Function IsPortListening()
+    Dim checkCmd, rc
+    checkCmd = "cmd.exe /c netstat -ano | findstr "":8000 "" | findstr ""LISTENING"""
+    rc = shell.Run(checkCmd, 0, True)
+    If rc = 0 Then
+        IsPortListening = True
+    Else
+        IsPortListening = False
+    End If
+End Function
+
 Function IsServerReady()
+    IsServerReady = False
+    If Not IsPortListening() Then
+        Exit Function
+    End If
+
     On Error Resume Next
     Err.Clear
-    Dim http
+    Dim http, status
     Set http = CreateObject("MSXML2.ServerXMLHTTP.6.0")
     If Err.Number <> 0 Then
         Err.Clear
         Set http = CreateObject("WinHttp.WinHttpRequest.5.1")
     End If
-    If Not (http Is Nothing) Then
-        http.setTimeouts 1000, 1000, 1000, 1000
-        http.Open "GET", "http://127.0.0.1:8000/manifest.json", False
-        http.Send
-        If Err.Number = 0 And http.Status >= 200 And http.Status < 500 Then
-            IsServerReady = True
-            On Error GoTo 0
-            Exit Function
+    If Err.Number <> 0 Then
+        Err.Clear
+        On Error GoTo 0
+        Exit Function
+    End If
+    If http Is Nothing Then
+        On Error GoTo 0
+        Exit Function
+    End If
+
+    http.setTimeouts 1000, 1000, 1000, 1000
+    http.Open "GET", "http://127.0.0.1:8000/manifest.json", False
+    http.Send
+    If Err.Number = 0 Then
+        status = 0
+        status = http.Status
+        If Err.Number = 0 Then
+            If status >= 200 Then
+                If status < 500 Then
+                    IsServerReady = True
+                End If
+            End If
         End If
     End If
     Err.Clear
     On Error GoTo 0
-    IsServerReady = False
 End Function
 
 ' Verifica se o servidor ja esta pronto e respondendo HTTP na porta 8000
 If Not IsServerReady() Then
-    ' Verifica se ja existe processo escutando na porta 8000 (ainda subindo)
-    Dim checkCmd, rc
-    checkCmd = "cmd.exe /c netstat -ano | findstr "":8000 "" | findstr ""LISTENING"""
-    rc = shell.Run(checkCmd, 0, True)
-
-    If rc <> 0 Then
+    If Not IsPortListening() Then
         ' Inicia o servidor FastAPI em background oculto (0 = oculto, False = nao bloqueia)
         shell.Run "cmd.exe /c python -m uvicorn app.main:app --host 0.0.0.0 --port 8000", 0, False
     End If
